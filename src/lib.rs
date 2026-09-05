@@ -17,6 +17,7 @@
 //! 6. `recompose` rebuilds the audio, sample-exactly for integer PCM input.
 pub mod associative;
 pub mod audio;
+pub mod decompose;
 pub mod dsp;
 pub mod error;
 
