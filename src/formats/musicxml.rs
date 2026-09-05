@@ -259,17 +259,27 @@ fn measure_notes(events: &[Event], from: u32, bar: u32, divisions: u32) -> Vec<E
         if length == 0 {
             continue;
         }
-        for (index, event) in chord.iter().enumerate() {
-            let played = (event.start + event.duration).min(to) - start;
-            let tied = event.start + event.duration > to;
-            out.extend(note_elements(
-                event,
-                played,
-                divisions,
-                index > 0,
-                tied,
-                event.start < from,
-            ));
+        // The pieces are interleaved across the chord rather than written
+        // voice by voice: `<chord>` means "sounding with the note before it",
+        // which is only true when every member's first piece comes before any
+        // member's second. Quantisation already gave the group one duration,
+        // so the pieces line up.
+        let pieces = split(length, divisions);
+        let count = pieces.len();
+        for (piece, (duration, name, dots)) in pieces.into_iter().enumerate() {
+            for (index, event) in chord.iter().enumerate() {
+                out.push(note_element(
+                    event,
+                    &Written {
+                        duration,
+                        name,
+                        dots,
+                        chord: index > 0,
+                        tie_forward: event.start + event.duration > to || piece + 1 < count,
+                        tie_back: event.start < from || piece > 0,
+                    },
+                ));
+            }
         }
         cursor = start + length;
     }
@@ -279,61 +289,68 @@ fn measure_notes(events: &[Event], from: u32, bar: u32, divisions: u32) -> Vec<E
     out
 }
 
-/// One note, split into as many tied values as it takes to write it down.
-fn note_elements(
-    event: &Event,
-    length: u32,
-    divisions: u32,
+/// One written note: one piece of one event, as it appears in the part.
+struct Written {
+    /// Length of this piece, in divisions.
+    duration: u32,
+    /// MusicXML note value the piece is written as.
+    name: &'static str,
+    /// Augmentation dots the value carries.
+    dots: u32,
+    /// Whether the piece sounds with the note written before it.
     chord: bool,
+    /// Whether the piece is tied to what comes after it.
     tie_forward: bool,
+    /// Whether the piece is tied to what came before it.
     tie_back: bool,
-) -> Vec<Element> {
-    let pieces = split(length, divisions);
-    let count = pieces.len();
-    pieces
-        .into_iter()
-        .enumerate()
-        .map(|(index, (duration, name, dots))| {
-            let starts_tie = tie_forward || index + 1 < count;
-            let stops_tie = tie_back || index > 0;
-            let mut note = Element::new("note")
-                .attribute("dynamics", format!("{:.4}", dynamics(event.velocity)));
-            if chord {
-                note = note.child(Element::new("chord"));
+}
+
+/// Builds one `note` element.
+fn note_element(event: &Event, written: &Written) -> Element {
+    let Written {
+        duration,
+        name,
+        dots,
+        chord,
+        tie_forward: starts_tie,
+        tie_back: stops_tie,
+    } = *written;
+    let mut note =
+        Element::new("note").attribute("dynamics", format!("{:.4}", dynamics(event.velocity)));
+    if chord {
+        note = note.child(Element::new("chord"));
+    }
+    let (step, alter) = STEPS[event.pitch as usize % 12];
+    let mut pitch = Element::new("pitch").child(Element::leaf("step", step));
+    if alter != 0 {
+        pitch = pitch.child(Element::leaf("alter", alter.to_string()));
+    }
+    note = note
+        .child(pitch.child(Element::leaf(
+            "octave",
+            (i32::from(event.pitch) / 12 - 1).to_string(),
+        )))
+        .child(Element::leaf("duration", duration.to_string()));
+    for (condition, kind) in [(stops_tie, "stop"), (starts_tie, "start")] {
+        if condition {
+            note = note.child(Element::new("tie").attribute("type", kind));
+        }
+    }
+    note = note.child(Element::leaf("voice", "1"));
+    note = note.child(Element::leaf("type", name));
+    for _ in 0..dots {
+        note = note.child(Element::new("dot"));
+    }
+    if starts_tie || stops_tie {
+        let mut notations = Element::new("notations");
+        for (condition, kind) in [(stops_tie, "stop"), (starts_tie, "start")] {
+            if condition {
+                notations = notations.child(Element::new("tied").attribute("type", kind));
             }
-            let (step, alter) = STEPS[event.pitch as usize % 12];
-            let mut pitch = Element::new("pitch").child(Element::leaf("step", step));
-            if alter != 0 {
-                pitch = pitch.child(Element::leaf("alter", alter.to_string()));
-            }
-            note = note
-                .child(pitch.child(Element::leaf(
-                    "octave",
-                    (i32::from(event.pitch) / 12 - 1).to_string(),
-                )))
-                .child(Element::leaf("duration", duration.to_string()));
-            for (condition, kind) in [(stops_tie, "stop"), (starts_tie, "start")] {
-                if condition {
-                    note = note.child(Element::new("tie").attribute("type", kind));
-                }
-            }
-            note = note.child(Element::leaf("voice", "1"));
-            note = note.child(Element::leaf("type", name));
-            for _ in 0..dots {
-                note = note.child(Element::new("dot"));
-            }
-            if starts_tie || stops_tie {
-                let mut notations = Element::new("notations");
-                for (condition, kind) in [(stops_tie, "stop"), (starts_tie, "start")] {
-                    if condition {
-                        notations = notations.child(Element::new("tied").attribute("type", kind));
-                    }
-                }
-                note = note.child(notations);
-            }
-            note
-        })
-        .collect()
+        }
+        note = note.child(notations);
+    }
+    note
 }
 
 /// The rests that fill a gap.
@@ -620,6 +637,29 @@ mod tests {
             frequency: frequency(pitch),
             confidence: 1.0,
         }
+    }
+
+    #[test]
+    fn a_chord_that_needs_tied_pieces_still_reads_back_as_one_chord() {
+        // Seven eighths of a beat cannot be written as one note value, so each
+        // voice becomes two tied pieces. Writing one voice at a time would put
+        // the second voice's `<chord>` against the first voice's second piece,
+        // which reads back as a chord in the wrong place.
+        let length = 7 * QUARTER / 8;
+        let notes = vec![
+            note(0, length, 60, 90),
+            note(0, length, 64, 90),
+            note(0, length, 67, 90),
+        ];
+        let text = write(&session(notes));
+        let read = parse(&text, 48_000, Some(120.0)).unwrap();
+
+        assert_eq!(read.len(), 3);
+        assert!(read.iter().all(|note| note.start == 0), "{read:?}");
+        assert_eq!(read[0].length, read[1].length);
+        assert_eq!(read[1].length, read[2].length);
+        let pitches: Vec<u8> = read.iter().map(|note| note.note).collect();
+        assert_eq!(pitches, vec![60, 64, 67]);
     }
 
     #[test]
