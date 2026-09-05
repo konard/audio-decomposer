@@ -2,9 +2,12 @@
 //! the decomposition is written in.
 //!
 //! - [`store`] the deduplicating doublet network;
-//! - [`lino`] Links Notation as the portable projection of that network.
+//! - [`lino`] Links Notation as the portable projection of that network;
+//! - `native` the optional file-mapped upstream store (`doublets-native`).
 
 pub mod lino;
+#[cfg(feature = "doublets-native")]
+pub mod native;
 pub mod store;
 
 pub use store::{Doublet, LinkIndex, LinkStore, NULL};

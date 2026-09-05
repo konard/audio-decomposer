@@ -20,6 +20,8 @@ pub enum Error {
     Mismatch(String),
     /// A configuration value outside its accepted range.
     InvalidArgument(String),
+    /// A link store refused an operation.
+    Storage(String),
 }
 
 impl fmt::Display for Error {
@@ -31,6 +33,7 @@ impl fmt::Display for Error {
             Self::Parse(message) => write!(f, "parse error: {message}"),
             Self::Mismatch(message) => write!(f, "mismatch: {message}"),
             Self::InvalidArgument(message) => write!(f, "invalid argument: {message}"),
+            Self::Storage(message) => write!(f, "storage error: {message}"),
         }
     }
 }
@@ -77,6 +80,12 @@ macro_rules! invalid_argument_error {
     ($($arg:tt)*) => { $crate::error::Error::InvalidArgument(format!($($arg)*)) };
 }
 
+/// Builds an [`Error::Storage`] from a formatted message.
+#[macro_export]
+macro_rules! storage_error {
+    ($($arg:tt)*) => { $crate::error::Error::Storage(format!($($arg)*)) };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,6 +99,7 @@ mod tests {
             Error::Parse("bad lino".into()),
             Error::Mismatch("rate".into()),
             Error::InvalidArgument("window".into()),
+            Error::Storage("link 7 does not exist".into()),
         ];
 
         for case in &cases {
