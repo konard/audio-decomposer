@@ -14,9 +14,14 @@
 use crate::archive;
 use crate::associative::schema::Manifest;
 use crate::decompose::model::{Decomposition, Note};
+use crate::dsp::tempo::{self, TempoOptions};
 
 /// Beats per minute used when nothing better is known.
 pub const DEFAULT_TEMPO: f64 = 120.0;
+
+/// How many placed events the tempo estimator needs before its answer is worth
+/// more than the default. Three chords do not make a tempo.
+pub const MINIMUM_TEMPO_EVENTS: usize = 8;
 
 /// What to put in the session.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -34,6 +39,12 @@ pub struct SessionOptions {
     pub residual: bool,
     /// Include the recognised notes as an instrument track.
     pub notes: bool,
+    /// Measure the tempo from where the events actually fall, and use `tempo`
+    /// only when the measurement is too weak to trust.
+    pub estimate_tempo: bool,
+    /// How sure the estimator has to be, in `0.0..=1.0`, before its answer is
+    /// preferred over `tempo`.
+    pub tempo_confidence: f64,
 }
 
 impl Default for SessionOptions {
@@ -44,15 +55,25 @@ impl Default for SessionOptions {
             bank: true,
             residual: true,
             notes: true,
+            estimate_tempo: true,
+            tempo_confidence: 0.5,
         }
     }
 }
 
 impl SessionOptions {
-    /// The same options at a different tempo.
+    /// The same options at a different tempo, which is then taken as given.
     #[must_use]
     pub const fn at_tempo(mut self, tempo: f64) -> Self {
         self.tempo = tempo;
+        self.estimate_tempo = false;
+        self
+    }
+
+    /// The same options with tempo measurement switched on or off.
+    #[must_use]
+    pub const fn estimating_tempo(mut self, estimate: bool) -> Self {
+        self.estimate_tempo = estimate;
         self
     }
 
@@ -248,7 +269,7 @@ impl Session {
         Self {
             name: source.name.clone(),
             sample_rate: source.sample_rate,
-            tempo: options.tempo,
+            tempo: tempo_of(manifest, options),
             frames: source.frames,
             channels: source.channels,
             tracks,
@@ -329,6 +350,36 @@ impl Session {
     }
 }
 
+/// The tempo the session is laid out with: measured from where the events fall
+/// when there are enough of them and the measurement is convincing, and the
+/// tempo the caller asked for otherwise.
+///
+/// The events are the sample placements and the recognised notes, which is
+/// exactly the onset list a tempo estimator wants: the decomposition already
+/// found where every attack is, so the tempo does not have to be looked for in
+/// the waveform a second time.
+fn tempo_of(manifest: &Manifest, options: &SessionOptions) -> f64 {
+    if !options.estimate_tempo || manifest.source.sample_rate == 0 {
+        return options.tempo;
+    }
+    let rate = f64::from(manifest.source.sample_rate);
+    let placements = manifest
+        .placements
+        .iter()
+        .filter(|placement| placement.start >= 0)
+        .map(|placement| placement.start as f64 / rate);
+    let notes = manifest.notes.iter().map(|note| note.start as f64 / rate);
+    let mut times: Vec<f64> = placements.chain(notes).collect();
+    times.sort_by(f64::total_cmp);
+    times.dedup_by(|left, right| (*left - *right).abs() < f64::EPSILON);
+    if times.len() < MINIMUM_TEMPO_EVENTS {
+        return options.tempo;
+    }
+    tempo::from_onsets(&times, TempoOptions::default())
+        .filter(|measured| measured.confidence >= options.tempo_confidence)
+        .map_or(options.tempo, |measured| measured.bpm)
+}
+
 /// Turns a placement into a clip, trimming the part that would start before the
 /// timeline does.
 fn clip_of(
@@ -406,6 +457,63 @@ mod tests {
             residual: audio(vec![vec![0.0; 4], vec![0.0; 4]]),
             correction: None,
         }
+    }
+
+    /// A manifest whose placements land on a steady grid, which is what the
+    /// tempo estimator is supposed to hear.
+    fn steady(interval: f64, count: usize) -> Manifest {
+        let rate = 8_000;
+        let source = audio(vec![vec![0.0; rate as usize * 12]]);
+        let mut manifest = archive::manifest_of(&Decomposition {
+            source: SourceInfo::of("steady", &source),
+            stems: Vec::new(),
+            samples: vec![Sample::new(0, "kick".to_string(), vec![0.5, -0.5])],
+            placements: Vec::new(),
+            notes: Vec::new(),
+            residual: source.clone(),
+            correction: None,
+        });
+        manifest.placements = (0..count)
+            .map(|index| {
+                let start = (index as f64 * interval * f64::from(rate)).round() as i64;
+                Placement::new(0, 0, start, Gain::UNIT)
+            })
+            .collect();
+        manifest
+    }
+
+    #[test]
+    fn the_tempo_is_measured_from_where_the_events_fall() {
+        for (interval, bpm) in [(0.5, 120.0), (0.4, 150.0), (0.75, 80.0)] {
+            let manifest = steady(interval, 20);
+            let session = Session::from_manifest(&manifest, &SessionOptions::default());
+            assert!(
+                (session.tempo - bpm).abs() < 2.0,
+                "expected {bpm} BPM from a hit every {interval} s, found {}",
+                session.tempo
+            );
+        }
+    }
+
+    #[test]
+    fn a_handful_of_events_is_not_a_tempo() {
+        let session = Session::from_manifest(&steady(0.5, 4), &SessionOptions::default());
+        assert!((session.tempo - DEFAULT_TEMPO).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_tempo_that_was_asked_for_is_not_second_guessed() {
+        let manifest = steady(0.4, 20);
+        let session = Session::from_manifest(&manifest, &SessionOptions::default().at_tempo(90.0));
+        assert!((session.tempo - 90.0).abs() < 1e-12);
+
+        let measured = SessionOptions {
+            tempo: 90.0,
+            estimate_tempo: true,
+            ..SessionOptions::default()
+        };
+        let session = Session::from_manifest(&manifest, &measured);
+        assert!((session.tempo - 150.0).abs() < 2.0, "{}", session.tempo);
     }
 
     #[test]
