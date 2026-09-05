@@ -233,9 +233,11 @@ fn measure_notes(events: &[Event], from: u32, bar: u32, divisions: u32) -> Vec<E
     let to = from + bar;
     let mut out = Vec::new();
     let mut cursor = from;
+    // A note belongs to this bar when it is still sounding somewhere inside it.
+    let sounds_here = |event: &Event| event.start + event.duration > from && event.start < to;
     let mut starts: Vec<u32> = events
         .iter()
-        .filter(|event| event.start + event.duration > from && event.start < to)
+        .filter(|event| sounds_here(event))
         .map(|event| event.start.max(from))
         .collect();
     starts.sort_unstable();
@@ -247,7 +249,7 @@ fn measure_notes(events: &[Event], from: u32, bar: u32, divisions: u32) -> Vec<E
         }
         let chord: Vec<&Event> = events
             .iter()
-            .filter(|event| event.start.max(from) == start && event.start < to)
+            .filter(|event| sounds_here(event) && event.start.max(from) == start)
             .collect();
         let length = chord
             .iter()
@@ -618,6 +620,22 @@ mod tests {
             frequency: frequency(pitch),
             confidence: 1.0,
         }
+    }
+
+    #[test]
+    fn a_note_that_ended_in_an_earlier_bar_is_left_out_of_it() {
+        // The long note carries into the second bar; the short one stopped in
+        // the first. Writing the second bar must not look back at the short one.
+        let notes = vec![
+            note(0, QUARTER, 60, 90),
+            note(3 * QUARTER, 4 * QUARTER, 67, 90),
+        ];
+        let text = write(&session(notes));
+        let read = parse(&text, 48_000, Some(120.0)).unwrap();
+
+        assert_eq!(read.len(), 2);
+        assert_eq!((read[0].start, read[0].length), (0, QUARTER));
+        assert_eq!((read[1].start, read[1].length), (3 * QUARTER, 4 * QUARTER));
     }
 
     #[test]
