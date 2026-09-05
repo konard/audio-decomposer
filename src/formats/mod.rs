@@ -12,6 +12,7 @@
 //! - [`xml`] the small XML writer and reader the project formats share.
 //! - [`zip`] the store-only container DAWproject files are packed into.
 //! - [`gzip`] the wrapper Ableton Live sets are compressed with.
+//! - [`project`] writes every one of them beside the audio they point at.
 //! - [`sfz`] the sample bank as an instrument every sampler can load.
 
 pub mod ableton;
@@ -22,6 +23,7 @@ pub mod gzip;
 pub mod lmms;
 pub mod midi;
 pub mod musicxml;
+pub mod project;
 pub mod reaper;
 pub mod session;
 pub mod sfz;
