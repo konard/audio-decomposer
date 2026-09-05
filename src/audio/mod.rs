@@ -11,6 +11,7 @@ pub mod aiff;
 pub mod wav;
 
 use crate::error::{Error, Result};
+use std::path::Path;
 
 /// Sample encodings understood by the readers and writers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -414,6 +415,110 @@ impl Audio {
     }
 }
 
+/// A container an audio file can be stored in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Container {
+    /// Microsoft RIFF/WAVE.
+    Wav,
+    /// Apple AIFF, including the uncompressed AIFF-C layout.
+    Aiff,
+}
+
+impl Container {
+    /// Every container the crate reads and writes.
+    pub const ALL: [Self; 2] = [Self::Wav, Self::Aiff];
+
+    /// The extension the container is conventionally stored under.
+    #[must_use]
+    pub const fn extension(self) -> &'static str {
+        match self {
+            Self::Wav => "wav",
+            Self::Aiff => "aiff",
+        }
+    }
+
+    /// The container an extension or name stands for.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        let name = name.trim().trim_start_matches('.').to_ascii_lowercase();
+        match name.as_str() {
+            "wav" | "wave" | "riff" => Some(Self::Wav),
+            "aif" | "aiff" | "aifc" => Some(Self::Aiff),
+            _ => None,
+        }
+    }
+
+    /// The container a path names, by its extension.
+    #[must_use]
+    pub fn of_path(path: impl AsRef<Path>) -> Option<Self> {
+        path.as_ref()
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .and_then(Self::parse)
+    }
+
+    /// The container a file's first bytes announce.
+    ///
+    /// Extensions lie; the four-character chunk identifiers at the head of a
+    /// RIFF or IFF file do not.
+    #[must_use]
+    pub fn of_bytes(bytes: &[u8]) -> Option<Self> {
+        match bytes.get(..4)? {
+            b"RIFF" | b"RIFX" => Some(Self::Wav),
+            b"FORM" => Some(Self::Aiff),
+            _ => None,
+        }
+    }
+}
+
+/// Decodes audio, choosing the codec by what the bytes say.
+pub fn decode(bytes: &[u8]) -> Result<Audio> {
+    match Container::of_bytes(bytes) {
+        Some(Container::Wav) => wav::decode(bytes),
+        Some(Container::Aiff) => aiff::decode(bytes),
+        None => Err(crate::format_error!(
+            "unrecognised audio container; expected a RIFF/WAVE or IFF/AIFF header"
+        )),
+    }
+}
+
+/// Encodes audio into a container.
+pub fn encode(audio: &Audio, container: Container) -> Result<Vec<u8>> {
+    match container {
+        Container::Wav => wav::encode(audio),
+        Container::Aiff => aiff::encode(audio),
+    }
+}
+
+/// Reads an audio file, whatever container it is in.
+pub fn read_file(path: impl AsRef<Path>) -> Result<Audio> {
+    let path = path.as_ref();
+    let bytes = std::fs::read(path)?;
+    match Container::of_bytes(&bytes).or_else(|| Container::of_path(path)) {
+        Some(Container::Wav) => wav::decode(&bytes),
+        Some(Container::Aiff) => aiff::decode(&bytes),
+        None => Err(crate::format_error!(
+            "{} is not a container this build reads; expected WAV or AIFF",
+            path.display()
+        )),
+    }
+}
+
+/// Writes an audio file in the container its extension names.
+pub fn write_file(path: impl AsRef<Path>, audio: &Audio) -> Result<()> {
+    let path = path.as_ref();
+    let container = Container::of_path(path).ok_or_else(|| {
+        crate::invalid_argument_error!(
+            "{} has no extension this build writes; expected .wav or .aiff",
+            path.display()
+        )
+    })?;
+    match container {
+        Container::Wav => wav::write_file(path, audio),
+        Container::Aiff => aiff::write_file(path, audio),
+    }
+}
+
 /// Rounds halfway cases away from zero, the rule every PCM encoder here uses.
 ///
 /// `f64::round` already rounds half away from zero; the wrapper documents the
@@ -426,6 +531,66 @@ pub fn round_half_away_from_zero(value: f64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_container_is_recognised_by_its_bytes_before_its_name() {
+        assert_eq!(Container::of_bytes(b"RIFF....WAVE"), Some(Container::Wav));
+        assert_eq!(Container::of_bytes(b"FORM....AIFF"), Some(Container::Aiff));
+        assert_eq!(Container::of_bytes(b"OggS"), None);
+        assert_eq!(Container::of_bytes(b"RIF"), None);
+        assert_eq!(Container::of_path("song.AIF"), Some(Container::Aiff));
+        assert_eq!(Container::of_path("song.flac"), None);
+        assert_eq!(Container::parse(".Wav"), Some(Container::Wav));
+    }
+
+    #[test]
+    fn every_container_round_trips_through_the_dispatching_codecs() {
+        let audio = Audio::from_channels(
+            8_000,
+            SampleFormat::PcmI16,
+            vec![vec![0.5, -0.25, 0.0, 0.125]],
+        )
+        .unwrap();
+        for container in Container::ALL {
+            let bytes = encode(&audio, container).unwrap();
+            assert_eq!(Container::of_bytes(&bytes), Some(container));
+            let read = decode(&bytes).unwrap();
+            assert_eq!(read.channels(), audio.channels());
+            assert_eq!(read.sample_rate(), audio.sample_rate());
+        }
+        assert!(decode(b"not audio at all").is_err());
+    }
+
+    #[test]
+    fn files_are_read_and_written_by_the_container_their_name_asks_for() {
+        let audio =
+            Audio::from_channels(8_000, SampleFormat::PcmI16, vec![vec![0.5, -0.5]]).unwrap();
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "audio-decomposer-container-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        for container in Container::ALL {
+            let path = root.join(format!("song.{}", container.extension()));
+            write_file(&path, &audio).unwrap();
+            let read = read_file(&path).unwrap();
+            assert_eq!(read.channels(), audio.channels());
+        }
+
+        // An extension nobody writes is refused instead of guessed at.
+        assert!(write_file(root.join("song.flac"), &audio).is_err());
+
+        // A file named wrongly is still read by what its bytes say.
+        let misnamed = root.join("actually.aiff");
+        std::fs::write(&misnamed, wav::encode(&audio).unwrap()).unwrap();
+        assert_eq!(read_file(&misnamed).unwrap().channels(), audio.channels());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn integer_quanta_are_powers_of_two() {

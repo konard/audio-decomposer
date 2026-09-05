@@ -26,5 +26,5 @@ pub mod error;
 pub mod formats;
 pub mod recompose;
 
-pub use audio::{Audio, SampleFormat};
+pub use audio::{Audio, Container, SampleFormat};
 pub use error::{Error, Result};
