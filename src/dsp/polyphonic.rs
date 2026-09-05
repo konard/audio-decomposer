@@ -158,8 +158,13 @@ fn remove_harmonics(
         let centre = frequency / bin_width;
         // A semitone either side, but never narrower than a single bin.
         let half_width = (centre * 0.06).max(1.5);
-        let start = (centre - half_width).max(0.0) as usize;
+        let start = ((centre - half_width).max(0.0) as usize).min(spectrum.len());
         let end = ((centre + half_width).ceil() as usize + 1).min(spectrum.len());
+        if start >= end {
+            // The harmonic is above the Nyquist frequency: the spectrum holds
+            // nothing of it, and every harmonic after this one is higher still.
+            break;
+        }
         for bin in &mut spectrum[start..end] {
             *bin = 0.0;
         }
@@ -253,6 +258,34 @@ mod tests {
                     .sum()
             })
             .collect()
+    }
+
+    #[test]
+    fn a_harmonic_above_the_nyquist_frequency_is_simply_not_there() {
+        // The eighth harmonic of the top note sits far above any bin the
+        // spectrum holds. Attenuating it used to index past the end.
+        let mut spectrum = vec![1.0_f64; 1025];
+        remove_harmonics(&mut spectrum, 108, 22_050, 2048, 8);
+        assert!(spectrum.iter().any(|value| *value == 0.0));
+
+        let options = PolyphonicOptions {
+            highest_note: 108,
+            ..PolyphonicOptions::default()
+        };
+        let sample_rate = 22_050;
+        let signal = chord(&[105, 108], sample_rate, sample_rate as usize / 2);
+        let spectrogram = stft::forward(
+            &signal,
+            sample_rate,
+            StftOptions {
+                fft_size: 2048,
+                hop: 512,
+                window: WindowKind::Hann,
+            },
+        )
+        .unwrap();
+        let found = track(&spectrogram, options);
+        assert!(found.iter().all(|note| note.note <= 108));
     }
 
     fn analyze(signal: &[f64], sample_rate: u32) -> Spectrogram {
