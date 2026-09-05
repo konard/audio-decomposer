@@ -4,6 +4,7 @@
 //! - [`midi`] standard MIDI files, the common denominator of every DAW.
 //! - [`musicxml`] the notation the score editors read.
 //! - [`dawproject`] the open interchange format Bitwig and Studio One read.
+//! - [`ableton`] the gzipped sets Ableton Live reads.
 //! - [`reaper`] the plain-text projects REAPER reads.
 //! - [`lmms`] the open projects LMMS reads.
 //! - [`xml`] the small XML writer and reader the project formats share.
@@ -11,6 +12,7 @@
 //! - [`gzip`] the wrapper Ableton Live sets are compressed with.
 //! - [`sfz`] the sample bank as an instrument every sampler can load.
 
+pub mod ableton;
 pub mod dawproject;
 pub mod gzip;
 pub mod lmms;
