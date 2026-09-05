@@ -493,7 +493,7 @@ pub fn encode(audio: &Audio, container: Container) -> Result<Vec<u8>> {
 /// Reads an audio file, whatever container it is in.
 pub fn read_file(path: impl AsRef<Path>) -> Result<Audio> {
     let path = path.as_ref();
-    let bytes = std::fs::read(path)?;
+    let bytes = std::fs::read(path).map_err(|error| crate::error::io_at(path, &error))?;
     match Container::of_bytes(&bytes).or_else(|| Container::of_path(path)) {
         Some(Container::Wav) => wav::decode(&bytes),
         Some(Container::Aiff) => aiff::decode(&bytes),
@@ -517,6 +517,10 @@ pub fn write_file(path: impl AsRef<Path>, audio: &Audio) -> Result<()> {
         Container::Wav => wav::write_file(path, audio),
         Container::Aiff => aiff::write_file(path, audio),
     }
+    .map_err(|error| match error {
+        crate::error::Error::Io(error) => crate::error::io_at(path, &error),
+        other => other,
+    })
 }
 
 /// Rounds halfway cases away from zero, the rule every PCM encoder here uses.

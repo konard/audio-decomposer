@@ -56,6 +56,19 @@ impl From<io::Error> for Error {
 /// Result alias used across the crate.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Names the file an I/O failure happened to.
+///
+/// [`io::Error`] says what went wrong and never says what it went wrong with,
+/// which turns "no such file or directory" into a guessing game for anyone
+/// running the tool over more than one file.
+#[must_use]
+pub fn io_at(path: impl AsRef<std::path::Path>, error: &io::Error) -> Error {
+    Error::Io(io::Error::new(
+        error.kind(),
+        format!("{}: {error}", path.as_ref().display()),
+    ))
+}
+
 /// Builds an [`Error::Format`] from a formatted message.
 #[macro_export]
 macro_rules! format_error {

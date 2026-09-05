@@ -390,7 +390,8 @@ pub fn write_file(path: impl AsRef<Path>, file: &MidiFile) -> Result<()> {
 
 /// Reads a MIDI file from disk.
 pub fn read_file(path: impl AsRef<Path>) -> Result<MidiFile> {
-    decode(&std::fs::read(path).map_err(Error::Io)?)
+    let path = path.as_ref();
+    decode(&std::fs::read(path).map_err(|error| crate::error::io_at(path, &error))?)
 }
 
 #[cfg(test)]
