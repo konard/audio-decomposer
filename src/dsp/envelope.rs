@@ -118,7 +118,7 @@ mod tests {
     fn envelopes_follow_a_decaying_tone() {
         let samples: Vec<f64> = (0..1000)
             .map(|index| {
-                let time = index as f64 / 1000.0;
+                let time = f64::from(index) / 1000.0;
                 (-time * 5.0).exp() * (time * 300.0).sin()
             })
             .collect();

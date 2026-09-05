@@ -79,7 +79,7 @@ pub fn magnitude_at(spectrum: &[f64], frequency: f64, sample_rate: u32, fft_size
     }
     let lower = position.floor() as usize;
     let fraction = position - lower as f64;
-    spectrum[lower].mul_add(1.0 - fraction, spectrum[lower + 1] * fraction)
+    spectrum[lower] * (1.0 - fraction) + spectrum[lower + 1] * fraction
 }
 
 /// Harmonic-sum salience of one candidate note.

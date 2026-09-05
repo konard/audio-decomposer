@@ -137,7 +137,7 @@ pub fn parabolic_minimum(values: &[f64], index: usize) -> f64 {
     let left = values[index - 1];
     let centre = values[index];
     let right = values[index + 1];
-    let denominator = 2.0 * (2.0f64.mul_add(centre, -left) - right);
+    let denominator = 2.0 * (2.0 * centre - left - right);
     if denominator.abs() < f64::EPSILON {
         return index as f64;
     }
@@ -294,7 +294,7 @@ mod tests {
         assert!(estimate(&[], sample_rate, PitchOptions::default()).is_none());
         assert!(estimate(&[0.0; 64], 0, PitchOptions::default()).is_none());
         assert!(estimate(
-            &[0.0; 4096],
+            &vec![0.0; 4096],
             sample_rate,
             PitchOptions {
                 minimum_hz: 500.0,

@@ -368,7 +368,8 @@ mod tests {
         let frequency = 500.0;
         let signal: Vec<f64> = (0..4000)
             .map(|index| {
-                (std::f64::consts::TAU * frequency * index as f64 / f64::from(sample_rate)).sin()
+                (std::f64::consts::TAU * frequency * f64::from(index) / f64::from(sample_rate))
+                    .sin()
             })
             .collect();
         let options = StftOptions {

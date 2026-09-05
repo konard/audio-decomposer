@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn forward_transform_matches_a_naive_dft() {
         let samples: Vec<f64> = (0..16)
-            .map(|index| (index as f64 * 0.7).sin() + 0.25 * (index as f64 * 2.1).cos())
+            .map(|index| (f64::from(index) * 0.7).sin() + 0.25 * (f64::from(index) * 2.1).cos())
             .collect();
         let expected = naive_dft(&samples);
         let actual = forward_real(&samples);
@@ -264,7 +264,9 @@ mod tests {
 
     #[test]
     fn inverse_transform_undoes_the_forward_transform() {
-        let samples: Vec<f64> = (0..64).map(|index| (index as f64 * 0.31).sin()).collect();
+        let samples: Vec<f64> = (0..64)
+            .map(|index| (f64::from(index) * 0.31).sin())
+            .collect();
         let mut buffer = forward_real(&samples);
         transform(&mut buffer, Direction::Inverse);
 
