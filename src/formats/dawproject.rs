@@ -497,7 +497,7 @@ mod tests {
             length,
             note: pitch,
             velocity,
-            frequency: 440.0,
+            frequency: 440.0 * ((f64::from(pitch) - 69.0) / 12.0).exp2(),
             confidence: 1.0,
         }
     }
@@ -660,7 +660,10 @@ mod tests {
         let clip = &session.tracks[0].clips[0];
         assert_eq!(clip.file, "audio/guitar.wav");
         // Two beats at 140 bpm is 6/7 of a second.
-        assert_eq!(clip.start, (2.0_f64 * 60.0 / 140.0 * 44_100.0).round() as usize);
+        assert_eq!(
+            clip.start,
+            (2.0_f64 * 60.0 / 140.0 * 44_100.0).round() as usize
+        );
     }
 
     #[test]
