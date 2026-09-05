@@ -6,6 +6,7 @@
 //! - [`dawproject`] the open interchange format Bitwig and Studio One read.
 //! - [`ableton`] the gzipped sets Ableton Live reads.
 //! - [`flstudio`] the binary projects FL Studio reads.
+//! - [`ardour`] the XML sessions Ardour reads.
 //! - [`reaper`] the plain-text projects REAPER reads.
 //! - [`lmms`] the open projects LMMS reads.
 //! - [`xml`] the small XML writer and reader the project formats share.
@@ -14,6 +15,7 @@
 //! - [`sfz`] the sample bank as an instrument every sampler can load.
 
 pub mod ableton;
+pub mod ardour;
 pub mod dawproject;
 pub mod flstudio;
 pub mod gzip;
