@@ -5,6 +5,7 @@
 //! - [`musicxml`] the notation the score editors read.
 //! - [`dawproject`] the open interchange format Bitwig and Studio One read.
 //! - [`ableton`] the gzipped sets Ableton Live reads.
+//! - [`flstudio`] the binary projects FL Studio reads.
 //! - [`reaper`] the plain-text projects REAPER reads.
 //! - [`lmms`] the open projects LMMS reads.
 //! - [`xml`] the small XML writer and reader the project formats share.
@@ -14,6 +15,7 @@
 
 pub mod ableton;
 pub mod dawproject;
+pub mod flstudio;
 pub mod gzip;
 pub mod lmms;
 pub mod midi;
