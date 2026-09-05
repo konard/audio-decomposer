@@ -90,6 +90,10 @@ pub fn regions(session: &Session) -> Vec<Region> {
         .filter_map(|instrument| Some((instrument.note?, instrument.file.as_str())))
         .collect();
     pitched.sort_by_key(|(note, _)| *note);
+    // One sample per key. A bank often holds several recordings of the same
+    // note; mapping them all to it would stack them into one louder voice, and
+    // would leave the zone around a repeated note inside out.
+    pitched.dedup_by_key(|(note, _)| *note);
 
     let mut out = Vec::with_capacity(session.instruments.len());
     for (index, (note, file)) in pitched.iter().enumerate() {
@@ -279,6 +283,28 @@ mod tests {
             frames: 100,
             peak: 0.5,
         }
+    }
+
+    #[test]
+    fn two_recordings_of_one_note_map_to_one_key_zone() {
+        // A bank routinely holds the same note twice. Mapping both would leave
+        // the second zone inside out: hikey below the key it is centred on.
+        let session = session(vec![
+            instrument(0, "first", Some(60)),
+            instrument(1, "second", Some(60)),
+            instrument(2, "higher", Some(72)),
+        ]);
+
+        let regions = regions(&session);
+
+        assert_eq!(regions.len(), 2);
+        for region in &regions {
+            assert!(
+                region.low_key <= region.key_center && region.key_center <= region.high_key,
+                "{region:?} is inside out"
+            );
+        }
+        assert_eq!(regions[0].sample, "samples/first.wav");
     }
 
     #[test]
