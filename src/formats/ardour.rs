@@ -22,6 +22,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::error::{Error, Result};
+use crate::formats::midi;
 use crate::formats::session::{Clip, Session, Track, TrackKind};
 use crate::formats::xml::{self, Element};
 
@@ -251,8 +252,42 @@ fn file_name(path: &str) -> String {
 }
 
 /// Reads an `.ardour` file back into a session.
+///
+/// Ardour keeps the notes of a MIDI track outside the session file, so
+/// [`parse`] alone gives an instrument track its region and no notes. Reading
+/// from disk can do better: the MIDI files sit at a known place beside the
+/// session, and any that are still there are read back onto their tracks.
 pub fn read_file(path: impl AsRef<Path>) -> Result<Session> {
-    parse(&fs::read_to_string(path)?)
+    let path = path.as_ref();
+    let mut session = parse(&fs::read_to_string(path)?)?;
+    read_midi_beside(
+        &mut session,
+        path.parent().unwrap_or_else(|| Path::new(".")),
+    );
+    Ok(session)
+}
+
+/// Fills in the notes of every instrument track from the MIDI file its region
+/// points at. A file that is missing or unreadable simply leaves the track as
+/// [`parse`] left it, because a session without its interchange directory is
+/// still a session.
+fn read_midi_beside(session: &mut Session, root: &Path) {
+    let sample_rate = session.sample_rate;
+    for track in &mut session.tracks {
+        if track.kind != TrackKind::Instrument {
+            continue;
+        }
+        let mut notes = Vec::new();
+        for clip in &track.clips {
+            if let Ok(file) = midi::read_file(root.join(&clip.file)) {
+                notes.extend(midi::to_notes(&file, sample_rate));
+            }
+        }
+        notes.sort_by_key(|note| (note.start, note.note));
+        if !notes.is_empty() {
+            track.notes = notes;
+        }
+    }
 }
 
 /// Reads the XML of an `.ardour` file back into a session.
