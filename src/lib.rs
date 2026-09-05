@@ -11,10 +11,13 @@
 //!    aligned and scaled match, and keeps an exact residual.
 //! 4. [`associative`] stores the whole result as a doublet link network that is
 //!    serialised to Links Notation.
-//! 5. [`formats`] exports the result as MIDI, MusicXML, DAWproject, Ableton
+//! 5. [`archive`] writes the whole decomposition to a directory and reads it
+//!    back unchanged.
+//! 6. [`formats`] exports the result as MIDI, MusicXML, DAWproject, Ableton
 //!    Live, FL Studio, REAPER, Ardour, LMMS and SFZ projects plus WAV/AIFF
 //!    stems and samples.
-//! 6. `recompose` rebuilds the audio, sample-exactly for integer PCM input.
+//! 7. `recompose` rebuilds the audio, sample-exactly for integer PCM input.
+pub mod archive;
 pub mod associative;
 pub mod audio;
 pub mod decompose;

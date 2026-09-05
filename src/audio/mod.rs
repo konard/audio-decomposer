@@ -362,6 +362,27 @@ impl Audio {
         }
     }
 
+    /// Whether writing the buffer in its own format and reading it back yields
+    /// exactly the same numbers.
+    ///
+    /// A buffer this crate decoded always says yes: decoding puts every sample
+    /// on the grid of its format. A buffer that analysis produced may say no,
+    /// and then it has to be stored as `f64` to stay lossless.
+    #[must_use]
+    pub fn is_exact_in_format(&self) -> bool {
+        let mut samples = self.channels.iter().flat_map(|channel| channel.iter());
+        match (self.format.quantum(), self.format.code_range()) {
+            (Some(quantum), Some((low, high))) => samples.all(|sample| {
+                let code = round_half_away_from_zero(sample / quantum);
+                (low..=high).contains(&code) && code as f64 * quantum == *sample
+            }),
+            _ => {
+                self.format == SampleFormat::F64
+                    || samples.all(|sample| f64::from(*sample as f32) == *sample)
+            }
+        }
+    }
+
     /// Integer codes for the current format, or `None` for float formats.
     #[must_use]
     pub fn codes(&self) -> Option<Vec<Vec<i64>>> {
@@ -523,5 +544,27 @@ mod tests {
                 .is_err()
         );
         assert!(Audio::from_codes(8_000, SampleFormat::F32, &[vec![1]]).is_err());
+    }
+
+    #[test]
+    fn exactness_in_a_format_is_reported_honestly() {
+        let grid = Audio::from_mono(8_000, SampleFormat::PcmI16, vec![0.5, -0.25]).unwrap();
+        assert!(grid.is_exact_in_format());
+
+        let off_grid =
+            Audio::from_mono(8_000, SampleFormat::PcmI16, vec![0.5 + 1.0 / 65_536.0]).unwrap();
+        assert!(!off_grid.is_exact_in_format());
+
+        let clipping = Audio::from_mono(8_000, SampleFormat::PcmI16, vec![2.0]).unwrap();
+        assert!(!clipping.is_exact_in_format());
+
+        let double = Audio::from_mono(8_000, SampleFormat::F64, vec![0.1]).unwrap();
+        assert!(double.is_exact_in_format());
+
+        let single = Audio::from_mono(8_000, SampleFormat::F32, vec![0.5]).unwrap();
+        assert!(single.is_exact_in_format());
+
+        let too_precise = Audio::from_mono(8_000, SampleFormat::F32, vec![0.1]).unwrap();
+        assert!(!too_precise.is_exact_in_format());
     }
 }
