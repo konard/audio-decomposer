@@ -137,10 +137,14 @@ impl Audio {
         channels: Vec<Vec<f64>>,
     ) -> Result<Self> {
         if sample_rate == 0 {
-            return Err(Error::InvalidArgument("sample rate must be positive".into()));
+            return Err(Error::InvalidArgument(
+                "sample rate must be positive".into(),
+            ));
         }
         if channels.is_empty() {
-            return Err(Error::InvalidArgument("at least one channel required".into()));
+            return Err(Error::InvalidArgument(
+                "at least one channel required".into(),
+            ));
         }
         let frames = channels[0].len();
         if channels.iter().any(|channel| channel.len() != frames) {
@@ -326,7 +330,11 @@ impl Audio {
                 (0..length)
                     .map(|offset| {
                         let index = start + offset;
-                        if index < frames { channel[index] } else { 0.0 }
+                        if index < frames {
+                            channel[index]
+                        } else {
+                            0.0
+                        }
                     })
                     .collect()
             })
@@ -457,10 +465,18 @@ mod tests {
 
     #[test]
     fn arithmetic_helpers_agree_with_manual_math() {
-        let a = Audio::from_channels(8_000, SampleFormat::F32, vec![vec![1.0, 2.0], vec![3.0, 4.0]])
-            .unwrap();
-        let b = Audio::from_channels(8_000, SampleFormat::F32, vec![vec![0.5, 0.5], vec![1.0, 1.0]])
-            .unwrap();
+        let a = Audio::from_channels(
+            8_000,
+            SampleFormat::F32,
+            vec![vec![1.0, 2.0], vec![3.0, 4.0]],
+        )
+        .unwrap();
+        let b = Audio::from_channels(
+            8_000,
+            SampleFormat::F32,
+            vec![vec![0.5, 0.5], vec![1.0, 1.0]],
+        )
+        .unwrap();
 
         let difference = a.difference(&b).unwrap();
         assert_eq!(difference.channel(0), &[0.5, 1.5]);

@@ -16,6 +16,7 @@
 //!    stems and samples.
 //! 6. [`recompose`] rebuilds the audio, sample-exactly for integer PCM input.
 pub mod audio;
+pub mod dsp;
 pub mod error;
 
 pub use audio::{Audio, SampleFormat};

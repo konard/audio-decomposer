@@ -71,6 +71,12 @@ macro_rules! parse_error {
     ($($arg:tt)*) => { $crate::error::Error::Parse(format!($($arg)*)) };
 }
 
+/// Builds an [`Error::InvalidArgument`] from a formatted message.
+#[macro_export]
+macro_rules! invalid_argument_error {
+    ($($arg:tt)*) => { $crate::error::Error::InvalidArgument(format!($($arg)*)) };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
