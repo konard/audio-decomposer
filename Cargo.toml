@@ -1,15 +1,15 @@
 [package]
-name = "example-sum-package-name"
+name = "audio-decomposer"
 version = "0.19.30"
 edition = "2021"
-description = "A Rust package template for AI-driven development"
+description = "Decompose audio into deduplicated samples, stems, notes and DAW projects, and compose it back losslessly"
 readme = "README.md"
 license = "Unlicense"
-keywords = ["template", "rust", "ai-driven"]
-categories = ["development-tools"]
-repository = "https://github.com/link-foundation/rust-ai-driven-development-pipeline-template"
-documentation = "https://github.com/link-foundation/rust-ai-driven-development-pipeline-template"
-rust-version = "1.70"
+keywords = ["audio", "midi", "dsp", "decomposition", "links"]
+categories = ["multimedia::audio", "science"]
+repository = "https://github.com/konard/audio-decomposer"
+documentation = "https://docs.rs/audio-decomposer"
+rust-version = "1.85"
 
 # Narrow allowlist of files shipped in the published `.crate` archive.
 # Keeping this list tight prevents docs, case studies, generated CI artifacts,
@@ -24,16 +24,24 @@ include = [
 ]
 
 [lib]
-name = "example_sum_package_name"
+name = "audio_decomposer"
 path = "src/lib.rs"
 
 [[bin]]
-name = "example-sum-package-name"
+name = "audio-decomposer"
 path = "src/main.rs"
+
+[features]
+default = []
+# Persist the associative link network through the upstream `doublets` store
+# (file-mapped Links Platform storage) instead of the in-repository network.
+doublets-native = ["dep:doublets"]
 
 [dependencies]
 lino-arguments = "0.3"
 clap = { version = "4.4", features = ["derive", "env"] }
+links-notation = "0.17"
+doublets = { version = "0.5", optional = true }
 
 [dev-dependencies]
 regex = "1"
@@ -53,6 +61,33 @@ module_name_repetitions = "allow"
 too_many_lines = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
+
+# Signal-processing code converts between sample indices, integer PCM codes and
+# f64 magnitudes on nearly every line; the cast lints would fire hundreds of
+# times without describing a real defect. Ranges are checked where it matters.
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+
+# `mul_add` compiles to a fused multiply-add whose intermediate result is not
+# rounded, so it yields different bits on different targets. This crate relies
+# on bit-exact, reproducible arithmetic for its lossless round trip.
+suboptimal_flops = "allow"
+
+# Exact float comparison is intentional here: the lossless paths must reproduce
+# sample values bit for bit, so `==` is the property under test.
+float_cmp = "allow"
+
+# Product names this crate exports for (`GarageBand`, `MusicXML`, `DAWproject`,
+# `FL Studio`) appear throughout the prose documentation; back-ticking every
+# occurrence would make the rendered docs harder to read, not easier.
+doc_markdown = "allow"
+
+# Short mathematical names (`n`, `re`, `im`, `x`, `y`) match the DSP literature
+# these algorithms are transcribed from.
+similar_names = "allow"
+many_single_char_names = "allow"
 
 [[test]]
 name = "unit"

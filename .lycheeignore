@@ -6,7 +6,7 @@ https?://127\.0\.0\.1
 
 # Example and placeholder URLs used by the template
 https?://example\.com
-https://docs\.rs/example-sum-package-name
+https://docs\.rs/audio-decomposer
 
 # Web Archive rejects automated checks despite serving browser requests
 https://web\.archive\.org

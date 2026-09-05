@@ -284,7 +284,7 @@ fn links_workflow_checks_documentation_with_archive_fallback() {
 
     let ignored_links = fs::read_to_string(format!("{}/.lycheeignore", env!("CARGO_MANIFEST_DIR")))
         .expect("lychee ignore file should exist");
-    assert!(ignored_links.contains("https://docs\\.rs/example-sum-package-name"));
+    assert!(ignored_links.contains("https://docs\\.rs/audio-decomposer"));
 }
 
 /// Regression test for issue #125:

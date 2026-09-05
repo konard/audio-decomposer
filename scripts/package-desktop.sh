@@ -9,7 +9,7 @@ TAG="${DESKTOP_RELEASE_TAG:-dev}"
 mkdir -p "$OUTPUT_DIR"
 cargo build --release
 
-binary=target/release/example-sum-package-name
+binary=target/release/audio-decomposer
 extension=""
 if [[ "$LABEL" == windows-* ]]; then
   binary+=".exe"
@@ -17,6 +17,6 @@ if [[ "$LABEL" == windows-* ]]; then
 fi
 [ -s "$binary" ] || { echo "Expected binary was not built: $binary" >&2; exit 1; }
 
-asset="example-sum-desktop-${LABEL}-${TAG}${extension}"
+asset="audio-decomposer-${LABEL}-${TAG}${extension}"
 cp "$binary" "$OUTPUT_DIR/$asset"
 echo "Packaged $OUTPUT_DIR/$asset"
