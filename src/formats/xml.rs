@@ -142,6 +142,23 @@ impl Element {
             out.push_str("/>\n");
             return;
         }
+        if self
+            .children
+            .iter()
+            .all(|child| matches!(child, Node::Text(_)))
+        {
+            // Text stays on one line: indenting it would change what it says.
+            out.push('>');
+            for child in &self.children {
+                if let Node::Text(text) = child {
+                    out.push_str(&escape(text));
+                }
+            }
+            out.push_str("</");
+            out.push_str(&self.name);
+            out.push_str(">\n");
+            return;
+        }
         out.push_str(">\n");
         for child in &self.children {
             match child {
