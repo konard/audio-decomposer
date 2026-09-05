@@ -266,7 +266,7 @@ mod tests {
         // spectrum holds. Attenuating it used to index past the end.
         let mut spectrum = vec![1.0_f64; 1025];
         remove_harmonics(&mut spectrum, 108, 22_050, 2048, 8);
-        assert!(spectrum.iter().any(|value| *value == 0.0));
+        assert!(spectrum.contains(&0.0));
 
         let options = PolyphonicOptions {
             highest_note: 108,

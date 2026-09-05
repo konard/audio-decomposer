@@ -240,17 +240,39 @@ fn audio_entries(root: &Path, session: &Session) -> Result<Vec<zip::Entry>> {
 /// This is the whole of exporting: the manifest says what the decomposition
 /// holds and where its audio is, and the projects are written to match.
 pub fn export(root: impl AsRef<Path>, options: &SessionOptions) -> Result<Vec<PathBuf>> {
+    export_these(root, options, &Format::ALL)
+}
+
+/// Exports an archive as the projects that were asked for.
+pub fn export_these(
+    root: impl AsRef<Path>,
+    options: &SessionOptions,
+    formats: &[Format],
+) -> Result<Vec<PathBuf>> {
     let root = root.as_ref();
     let manifest = archive::read_manifest(root)?;
-    let mut session = Session::from_manifest(&manifest, options);
+    let session = session_of(root, &manifest, options);
+    write_these(root, &session, formats)
+}
+
+/// The session an archive holds, named after its directory when the manifest
+/// left the name empty.
+#[must_use]
+pub fn session_of(
+    root: impl AsRef<Path>,
+    manifest: &crate::associative::schema::Manifest,
+    options: &SessionOptions,
+) -> Session {
+    let mut session = Session::from_manifest(manifest, options);
     if session.name.is_empty() {
         session.name = root
+            .as_ref()
             .file_stem()
             .and_then(|name| name.to_str())
             .unwrap_or(FALLBACK_NAME)
             .to_string();
     }
-    write_all(root, &session)
+    session
 }
 
 /// Reads back what was written, as far as each format can be read back.
