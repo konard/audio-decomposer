@@ -133,6 +133,63 @@ fn frame_start_sample(frame: usize, spectrogram: &Spectrogram) -> usize {
     }
 }
 
+/// Snaps onsets to the steepest rise in local energy near where the transform
+/// placed them.
+///
+/// A spectrogram frame only says that something happened somewhere inside its
+/// window, so [`detect`] reports the start of that window and is early by up to
+/// one window length. Deduplication needs better than that: two occurrences of
+/// the same sound have to be cut at the same point in the sound, or they are
+/// not the same waveform. This walks the signal itself and moves each onset to
+/// the sample where short-term energy grows the fastest, which for a struck
+/// note is its attack.
+///
+/// `span` is how far ahead of the reported position to look, and `block` is the
+/// length of the energy windows compared on either side of a candidate.
+pub fn refine(onsets: &mut [Onset], samples: &[f64], sample_rate: u32, span: usize, block: usize) {
+    if samples.is_empty() || block == 0 || span == 0 {
+        return;
+    }
+    let mut squares = Vec::with_capacity(samples.len() + 1);
+    squares.push(0.0);
+    for sample in samples {
+        let last = *squares.last().unwrap_or(&0.0);
+        squares.push(last + sample * sample);
+    }
+    let energy = |from: usize, to: usize| -> f64 {
+        let to = to.min(samples.len());
+        if from >= to {
+            return 0.0;
+        }
+        squares[to] - squares[from]
+    };
+
+    let limits: Vec<usize> = onsets
+        .iter()
+        .skip(1)
+        .map(|onset| onset.sample)
+        .chain(std::iter::once(samples.len()))
+        .collect();
+    for (onset, limit) in onsets.iter_mut().zip(limits) {
+        let first = onset.sample.min(samples.len());
+        let last = (first + span).min(limit.max(first + 1)).min(samples.len());
+        let mut best = first;
+        let mut best_rise = f64::NEG_INFINITY;
+        for position in first..last {
+            let rise = energy(position, position + block)
+                - energy(position.saturating_sub(block), position);
+            if rise > best_rise {
+                best_rise = rise;
+                best = position;
+            }
+        }
+        onset.sample = best;
+        if sample_rate > 0 {
+            onset.time = best as f64 / f64::from(sample_rate);
+        }
+    }
+}
+
 /// Turns onsets into half-open sample ranges that tile the whole signal.
 #[must_use]
 pub fn segments(onsets: &[Onset], signal_length: usize) -> Vec<(usize, usize)> {
