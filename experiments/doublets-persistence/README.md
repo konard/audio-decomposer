@@ -39,4 +39,4 @@ Consequences for this crate:
 - nothing in the crate may treat the mapping as an archive; `.lino` is the
   archive.
 
-[`RawMem::grow_filled`]: https://docs.rs/platform-mem/0.3.0/platform_mem/trait.RawMem.html#method.grow_filled
+[`RawMem::grow_filled`]: https://docs.rs/platform-mem/0.3.0/platform_mem/raw_mem/trait.RawMem.html#method.grow_filled

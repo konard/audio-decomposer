@@ -61,6 +61,29 @@ pub enum Message {
         /// Program number.
         program: u8,
     },
+    /// Pressure applied to one held key after it sounded.
+    Aftertouch {
+        /// MIDI channel, `0..16`.
+        channel: u8,
+        /// Note number the pressure applies to.
+        note: u8,
+        /// Pressure.
+        pressure: u8,
+    },
+    /// Pressure applied to every held key of a channel.
+    ChannelPressure {
+        /// MIDI channel, `0..16`.
+        channel: u8,
+        /// Pressure.
+        pressure: u8,
+    },
+    /// Bends every sounding note of a channel.
+    PitchBend {
+        /// MIDI channel, `0..16`.
+        channel: u8,
+        /// Fourteen-bit bend amount; `0x2000` is the centre.
+        value: u16,
+    },
     /// Names the track.
     TrackName(String),
     /// Names the instrument the track is played on.
@@ -84,7 +107,7 @@ pub enum Message {
     EndOfTrack,
     /// A meta event this crate does not model, kept so files round trip.
     Meta {
-        /// Meta event type byte.
+        /// Meta event type byte, `0x00..0x80`.
         kind: u8,
         /// Payload.
         data: Vec<u8>,
@@ -322,11 +345,10 @@ pub fn to_notes(file: &MidiFile, sample_rate: u32) -> Vec<Note> {
         for event in &track.events {
             tick = tick.saturating_add(event.delta);
             let (note, velocity, starting) = match event.message {
-                Message::NoteOn {
-                    note, velocity: 0, ..
-                } => (note, 0, false),
-                Message::NoteOn { note, velocity, .. } => (note, velocity, true),
-                Message::NoteOff { note, .. } => (note, 0, false),
+                Message::NoteOn { note, velocity, .. } if velocity > 0 => (note, velocity, true),
+                // A note on with velocity zero is a note off, as the standard
+                // allows so that running status can carry a whole phrase.
+                Message::NoteOn { note, .. } | Message::NoteOff { note, .. } => (note, 0, false),
                 _ => continue,
             };
             heard = true;
@@ -369,15 +391,16 @@ pub fn encode(file: &MidiFile) -> Vec<u8> {
 
     for track in &file.tracks {
         let mut body = Vec::new();
+        let mut running = Running::default();
         let mut ended = false;
         for event in &track.events {
             write_vlq(&mut body, event.delta);
-            write_message(&mut body, &event.message);
+            write_message(&mut body, &event.message, &mut running);
             ended = event.message == Message::EndOfTrack;
         }
         if !ended {
             write_vlq(&mut body, 0);
-            write_message(&mut body, &Message::EndOfTrack);
+            write_message(&mut body, &Message::EndOfTrack, &mut running);
         }
         bytes.extend_from_slice(b"MTrk");
         bytes.extend_from_slice(&(body.len() as u32).to_be_bytes());
@@ -447,6 +470,31 @@ fn write_vlq(bytes: &mut Vec<u8>, value: u32) {
     }
 }
 
+/// The status byte a track is currently running from.
+///
+/// A standard MIDI file may leave out the status byte of a channel message
+/// when it repeats the previous one. Writing that abbreviation keeps exported
+/// files the same size as the ones DAWs write, and — more usefully here —
+/// makes encoding the inverse of decoding, so a file read from disk is written
+/// back byte for byte.
+#[derive(Clone, Copy, Debug, Default)]
+struct Running(Option<u8>);
+
+impl Running {
+    /// Emits `status` unless it is already the running one.
+    fn status(&mut self, bytes: &mut Vec<u8>, status: u8) {
+        if self.0 != Some(status) {
+            bytes.push(status);
+            self.0 = Some(status);
+        }
+    }
+
+    /// Cancels the abbreviation, as every system message does.
+    const fn clear(&mut self) {
+        self.0 = None;
+    }
+}
+
 fn write_meta(bytes: &mut Vec<u8>, kind: u8, data: &[u8]) {
     bytes.push(0xFF);
     bytes.push(kind);
@@ -454,48 +502,96 @@ fn write_meta(bytes: &mut Vec<u8>, kind: u8, data: &[u8]) {
     bytes.extend_from_slice(data);
 }
 
-fn write_message(bytes: &mut Vec<u8>, message: &Message) {
+fn write_message(bytes: &mut Vec<u8>, message: &Message, running: &mut Running) {
     match message {
         Message::NoteOff {
             channel,
             note,
             velocity,
-        } => bytes.extend_from_slice(&[0x80 | (channel & 0x0F), *note, *velocity]),
+        } => {
+            running.status(bytes, 0x80 | (channel & 0x0F));
+            bytes.extend_from_slice(&[*note, *velocity]);
+        }
         Message::NoteOn {
             channel,
             note,
             velocity,
-        } => bytes.extend_from_slice(&[0x90 | (channel & 0x0F), *note, *velocity]),
+        } => {
+            running.status(bytes, 0x90 | (channel & 0x0F));
+            bytes.extend_from_slice(&[*note, *velocity]);
+        }
+        Message::Aftertouch {
+            channel,
+            note,
+            pressure,
+        } => {
+            running.status(bytes, 0xA0 | (channel & 0x0F));
+            bytes.extend_from_slice(&[*note, *pressure]);
+        }
         Message::ControlChange {
             channel,
             controller,
             value,
-        } => bytes.extend_from_slice(&[0xB0 | (channel & 0x0F), *controller, *value]),
-        Message::ProgramChange { channel, program } => {
-            bytes.extend_from_slice(&[0xC0 | (channel & 0x0F), *program]);
+        } => {
+            running.status(bytes, 0xB0 | (channel & 0x0F));
+            bytes.extend_from_slice(&[*controller, *value]);
         }
-        Message::Text(text) => write_meta(bytes, 0x01, text.as_bytes()),
-        Message::TrackName(name) => write_meta(bytes, 0x03, name.as_bytes()),
-        Message::InstrumentName(name) => write_meta(bytes, 0x04, name.as_bytes()),
-        Message::Tempo(tempo) => write_meta(bytes, 0x51, &tempo.to_be_bytes()[1..]),
+        Message::ProgramChange { channel, program } => {
+            running.status(bytes, 0xC0 | (channel & 0x0F));
+            bytes.push(*program);
+        }
+        Message::ChannelPressure { channel, pressure } => {
+            running.status(bytes, 0xD0 | (channel & 0x0F));
+            bytes.push(*pressure);
+        }
+        Message::PitchBend { channel, value } => {
+            running.status(bytes, 0xE0 | (channel & 0x0F));
+            bytes.extend_from_slice(&[(value & 0x7F) as u8, ((value >> 7) & 0x7F) as u8]);
+        }
+        Message::Text(text) => {
+            running.clear();
+            write_meta(bytes, 0x01, text.as_bytes());
+        }
+        Message::TrackName(name) => {
+            running.clear();
+            write_meta(bytes, 0x03, name.as_bytes());
+        }
+        Message::InstrumentName(name) => {
+            running.clear();
+            write_meta(bytes, 0x04, name.as_bytes());
+        }
+        Message::Tempo(tempo) => {
+            running.clear();
+            write_meta(bytes, 0x51, &tempo.to_be_bytes()[1..]);
+        }
         Message::TimeSignature {
             numerator,
             denominator,
             clocks_per_click,
             thirty_seconds_per_quarter,
-        } => write_meta(
-            bytes,
-            0x58,
-            &[
-                *numerator,
-                *denominator,
-                *clocks_per_click,
-                *thirty_seconds_per_quarter,
-            ],
-        ),
-        Message::EndOfTrack => write_meta(bytes, 0x2F, &[]),
-        Message::Meta { kind, data } => write_meta(bytes, *kind, data),
+        } => {
+            running.clear();
+            write_meta(
+                bytes,
+                0x58,
+                &[
+                    *numerator,
+                    *denominator,
+                    *clocks_per_click,
+                    *thirty_seconds_per_quarter,
+                ],
+            );
+        }
+        Message::EndOfTrack => {
+            running.clear();
+            write_meta(bytes, 0x2F, &[]);
+        }
+        Message::Meta { kind, data } => {
+            running.clear();
+            write_meta(bytes, *kind, data);
+        }
         Message::SysEx { status, data } => {
+            running.clear();
             bytes.push(*status);
             write_vlq(bytes, data.len() as u32);
             bytes.extend_from_slice(data);
@@ -569,23 +665,26 @@ impl<'a> Reader<'a> {
 fn read_track(body: &[u8]) -> Result<Track> {
     let mut reader = Reader::new(body);
     let mut events = Vec::new();
-    let mut status = 0_u8;
+    let mut running: Option<u8> = None;
     while reader.remaining() > 0 {
         let delta = reader.vlq()?;
-        let mut byte = reader.byte()?;
-        if byte < 0x80 {
-            // Running status: the previous status byte is implied.
-            if status == 0 {
-                return Err(Error::Format(
-                    "MIDI event without a status byte to run from".to_string(),
-                ));
-            }
-            reader.position -= 1;
-            byte = status;
-        } else if byte < 0xF0 {
-            status = byte;
-        }
-        let message = read_message(&mut reader, byte)?;
+        let next = reader
+            .peek()
+            .ok_or_else(|| Error::Format("MIDI track ends after a delta time".to_string()))?;
+        let status = if next < 0x80 {
+            // Running status: the data bytes follow the previous status byte,
+            // which is not repeated.
+            running.ok_or_else(|| {
+                Error::Format("MIDI event without a status byte to run from".to_string())
+            })?
+        } else {
+            reader.skip(1)?;
+            next
+        };
+        // Only channel messages may be run from; a system message cancels the
+        // abbreviation, exactly as the encoder assumes.
+        running = (status < 0xF0).then_some(status);
+        let message = read_message(&mut reader, status)?;
         let end = message == Message::EndOfTrack;
         events.push(Event::new(delta, message));
         if end {
@@ -608,13 +707,11 @@ fn read_message(reader: &mut Reader<'_>, status: u8) -> Result<Message> {
             note: reader.byte()?,
             velocity: reader.byte()?,
         }),
-        0xA0 => {
-            let data = reader.take(2)?;
-            Ok(Message::Meta {
-                kind: status,
-                data: data.to_vec(),
-            })
-        }
+        0xA0 => Ok(Message::Aftertouch {
+            channel,
+            note: reader.byte()?,
+            pressure: reader.byte()?,
+        }),
         0xB0 => Ok(Message::ControlChange {
             channel,
             controller: reader.byte()?,
@@ -624,15 +721,16 @@ fn read_message(reader: &mut Reader<'_>, status: u8) -> Result<Message> {
             channel,
             program: reader.byte()?,
         }),
-        0xD0 => Ok(Message::Meta {
-            kind: status,
-            data: vec![reader.byte()?],
+        0xD0 => Ok(Message::ChannelPressure {
+            channel,
+            pressure: reader.byte()?,
         }),
         0xE0 => {
-            let data = reader.take(2)?;
-            Ok(Message::Meta {
-                kind: status,
-                data: data.to_vec(),
+            let low = reader.byte()?;
+            let high = reader.byte()?;
+            Ok(Message::PitchBend {
+                channel,
+                value: (u16::from(high & 0x7F) << 7) | u16::from(low & 0x7F),
             })
         }
         _ => read_system(reader, status),
@@ -801,11 +899,17 @@ mod tests {
         write_vlq(&mut body, 0);
         body.extend_from_slice(&[0x80, 60, 0]);
         write_vlq(&mut body, 0);
-        body.extend_from_slice(&[0x80, 62, 0]);
+        body.extend_from_slice(&[62, 0]); // running status again
         write_vlq(&mut body, 0);
         body.extend_from_slice(&[0xF0, 2, 0x7E, 0xF7]);
         write_vlq(&mut body, 0);
         body.extend_from_slice(&[0xE0, 0, 64]);
+        write_vlq(&mut body, 0);
+        body.extend_from_slice(&[0xA0, 60, 88]);
+        write_vlq(&mut body, 0);
+        body.extend_from_slice(&[0xD0, 77]);
+        write_vlq(&mut body, 0);
+        body.extend_from_slice(&[0xFF, 0x7F, 3, 1, 2, 3]);
         write_vlq(&mut body, 0);
         body.extend_from_slice(&[0xFF, 0x2F, 0]);
 
@@ -841,9 +945,31 @@ mod tests {
         );
         assert_eq!(
             events[5].message,
+            Message::PitchBend {
+                channel: 0,
+                value: 8_192
+            }
+        );
+        assert_eq!(
+            events[6].message,
+            Message::Aftertouch {
+                channel: 0,
+                note: 60,
+                pressure: 88
+            }
+        );
+        assert_eq!(
+            events[7].message,
+            Message::ChannelPressure {
+                channel: 0,
+                pressure: 77
+            }
+        );
+        assert_eq!(
+            events[8].message,
             Message::Meta {
-                kind: 0xE0,
-                data: vec![0, 64]
+                kind: 0x7F,
+                data: vec![1, 2, 3]
             }
         );
         assert_eq!(encode(&file), bytes);
@@ -881,6 +1007,35 @@ mod tests {
                         channel: 2,
                         controller: 7,
                         value: 100,
+                    },
+                ),
+                Event::new(
+                    0,
+                    Message::Aftertouch {
+                        channel: 2,
+                        note: 64,
+                        pressure: 33,
+                    },
+                ),
+                Event::new(
+                    0,
+                    Message::ChannelPressure {
+                        channel: 2,
+                        pressure: 44,
+                    },
+                ),
+                Event::new(
+                    0,
+                    Message::PitchBend {
+                        channel: 2,
+                        value: 0x2F_3A,
+                    },
+                ),
+                Event::new(
+                    0,
+                    Message::SysEx {
+                        status: 0xF7,
+                        data: vec![0x7E, 0x00],
                     },
                 ),
                 Event::new(
