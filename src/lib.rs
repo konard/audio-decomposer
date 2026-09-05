@@ -17,6 +17,7 @@
 //!    Live, FL Studio, REAPER, Ardour, LMMS and SFZ projects plus WAV/AIFF
 //!    stems and samples.
 //! 7. [`recompose`] rebuilds the audio, sample-exactly for integer PCM input.
+#![doc = include_str!("../docs/lib-overview.md")]
 pub mod archive;
 pub mod associative;
 pub mod audio;
