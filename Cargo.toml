@@ -19,7 +19,6 @@ include = [
     "src/**/*.rs",
     "examples/**/*.rs",
     "README.md",
-    "docs/lib-overview.md",
     "LICENSE",
     "CHANGELOG.md",
 ]

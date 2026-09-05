@@ -125,8 +125,8 @@ The modules mirror the pipeline:
 | `formats`     | MIDI, MusicXML, DAWproject and the DAW project writers             |
 | `recompose`   | Rebuilding the audio, sample-exactly for integer PCM               |
 
-See [docs/lib-overview.md](docs/lib-overview.md) and the
-[API documentation](https://docs.rs/audio-decomposer).
+The crate documentation opens with the same pipeline written as code: see
+[`src/lib.rs`](src/lib.rs) or the [API documentation](https://docs.rs/audio-decomposer).
 
 ## The archive
 
