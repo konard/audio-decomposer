@@ -16,7 +16,7 @@
 //! 6. [`formats`] exports the result as MIDI, MusicXML, DAWproject, Ableton
 //!    Live, FL Studio, REAPER, Ardour, LMMS and SFZ projects plus WAV/AIFF
 //!    stems and samples.
-//! 7. `recompose` rebuilds the audio, sample-exactly for integer PCM input.
+//! 7. [`recompose`] rebuilds the audio, sample-exactly for integer PCM input.
 pub mod archive;
 pub mod associative;
 pub mod audio;
@@ -24,6 +24,7 @@ pub mod decompose;
 pub mod dsp;
 pub mod error;
 pub mod formats;
+pub mod recompose;
 
 pub use audio::{Audio, SampleFormat};
 pub use error::{Error, Result};
