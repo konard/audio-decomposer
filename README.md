@@ -176,6 +176,26 @@ Every project format has a reader as well as a writer, and the integration
 suite asserts that a session written by the exporter reads back as the session
 it was written from.
 
+### Which software opens what
+
+| Software              | Open with                                          |
+| --------------------- | -------------------------------------------------- |
+| Ableton Live          | `.als` directly, or `.dawproject`                   |
+| FL Studio             | `.flp` directly                                     |
+| REAPER                | `.rpp` directly                                     |
+| Ardour                | `.ardour` directly, with its `interchange/` folder  |
+| LMMS                  | `.mmp` directly                                     |
+| Bitwig, Studio One    | `.dawproject` directly                              |
+| GarageBand, Logic     | import `.mid`, then the `samples/` and `stems/` WAVs |
+| Reason                | import `.mid`, then the WAVs; `.sfz` for the sampler |
+| Sibelius, MuseScore   | `.musicxml`                                         |
+| Any SFZ sampler       | `.sfz`, which points at the sample bank             |
+
+GarageBand, Logic and Reason keep their projects in closed formats that no
+third party can write, so they are served the way they are meant to be: a MIDI
+score of the notes plus the audio the score plays, which every one of them
+imports.
+
 ## Testing
 
 The tests never use copyrighted audio. Every fixture is synthesised inside the
