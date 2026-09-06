@@ -419,12 +419,19 @@ impl Audio {
     /// all-zero correction is exact in 8 bits, but tagging it that way would
     /// arm [`Audio::quantize`] to crush anything later mixed into it, so a
     /// buffer derived from a 16-bit recording stays at 16 bits or wider.
+    ///
+    /// A float floor also stays float. Integer formats space their codes evenly
+    /// while floats crowd them around zero, so `f32` resolves quiet detail that
+    /// even a 32-bit grid cannot place, and swapping one for the other would
+    /// lose exactly the samples a residual is made of.
     #[must_use]
     pub fn narrowest_exact_format(&self, floor: SampleFormat) -> SampleFormat {
         SampleFormat::ALL
             .iter()
             .copied()
-            .filter(|format| format.bits() >= floor.bits())
+            .filter(|format| {
+                format.bits() >= floor.bits() && (!floor.is_float() || format.is_float())
+            })
             .find(|format| self.is_exact_in(*format))
             .unwrap_or(SampleFormat::F64)
     }
@@ -824,6 +831,19 @@ mod tests {
         assert_eq!(
             silence.narrowest_exact_format(SampleFormat::PcmI16),
             SampleFormat::PcmI16
+        );
+    }
+
+    #[test]
+    fn a_float_floor_never_drops_to_an_integer_grid() {
+        // `PcmI32` is exact for these samples and no wider than `F32`, but a
+        // float recording's parts must stay float: an even grid cannot hold the
+        // quiet detail single precision crowds around zero.
+        let derived = Audio::from_mono(8_000, SampleFormat::F32, vec![0.5, -0.25]).unwrap();
+        assert!(derived.is_exact_in(SampleFormat::PcmI32));
+        assert_eq!(
+            derived.narrowest_exact_format(SampleFormat::F32),
+            SampleFormat::F32
         );
     }
 
