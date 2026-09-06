@@ -2,8 +2,8 @@
 //!
 //! The pipeline is deliberately reversible at every level:
 //!
-//! 1. [`audio`] decodes a container into planar `f64` channels on an exact
-//!    integer grid.
+//! 1. [`audio`] decodes a WAV, AIFF or FLAC container into planar `f64`
+//!    channels on an exact integer grid.
 //! 2. [`dsp`] provides the analysis primitives (FFT, STFT, windows, onsets,
 //!    pitch detection, harmonic/percussive separation).
 //! 3. [`decompose`] splits a recording into stems, cuts the stems into events,
@@ -14,8 +14,8 @@
 //! 5. [`archive`] writes the whole decomposition to a directory and reads it
 //!    back unchanged.
 //! 6. [`formats`] exports the result as MIDI, MusicXML, DAWproject, Ableton
-//!    Live, FL Studio, REAPER, Ardour, LMMS and SFZ projects plus WAV/AIFF
-//!    stems and samples.
+//!    Live, FL Studio, REAPER, Ardour, LMMS and SFZ projects plus WAV, AIFF
+//!    and FLAC stems and samples.
 //! 7. [`recompose`] rebuilds the audio, sample-exactly for integer PCM input.
 //!
 //! # At a glance

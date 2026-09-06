@@ -8,6 +8,7 @@
 //! integer grid (see [`SampleFormat::quantum`]).
 
 pub mod aiff;
+pub mod flac;
 pub mod wav;
 
 use crate::error::{Error, Result};
@@ -474,11 +475,13 @@ pub enum Container {
     Wav,
     /// Apple AIFF, including the uncompressed AIFF-C layout.
     Aiff,
+    /// FLAC, which is how public-domain recordings are actually published.
+    Flac,
 }
 
 impl Container {
     /// Every container the crate reads and writes.
-    pub const ALL: [Self; 2] = [Self::Wav, Self::Aiff];
+    pub const ALL: [Self; 3] = [Self::Wav, Self::Aiff, Self::Flac];
 
     /// The extension the container is conventionally stored under.
     #[must_use]
@@ -486,6 +489,7 @@ impl Container {
         match self {
             Self::Wav => "wav",
             Self::Aiff => "aiff",
+            Self::Flac => "flac",
         }
     }
 
@@ -496,6 +500,7 @@ impl Container {
         match name.as_str() {
             "wav" | "wave" | "riff" => Some(Self::Wav),
             "aif" | "aiff" | "aifc" => Some(Self::Aiff),
+            "flac" => Some(Self::Flac),
             _ => None,
         }
     }
@@ -518,6 +523,7 @@ impl Container {
         match bytes.get(..4)? {
             b"RIFF" | b"RIFX" => Some(Self::Wav),
             b"FORM" => Some(Self::Aiff),
+            b"fLaC" => Some(Self::Flac),
             _ => None,
         }
     }
@@ -528,8 +534,9 @@ pub fn decode(bytes: &[u8]) -> Result<Audio> {
     match Container::of_bytes(bytes) {
         Some(Container::Wav) => wav::decode(bytes),
         Some(Container::Aiff) => aiff::decode(bytes),
+        Some(Container::Flac) => flac::decode(bytes),
         None => Err(crate::format_error!(
-            "unrecognised audio container; expected a RIFF/WAVE or IFF/AIFF header"
+            "unrecognised audio container; expected a RIFF/WAVE, IFF/AIFF or fLaC header"
         )),
     }
 }
@@ -539,6 +546,7 @@ pub fn encode(audio: &Audio, container: Container) -> Result<Vec<u8>> {
     match container {
         Container::Wav => wav::encode(audio),
         Container::Aiff => aiff::encode(audio),
+        Container::Flac => flac::encode(audio),
     }
 }
 
@@ -549,8 +557,9 @@ pub fn read_file(path: impl AsRef<Path>) -> Result<Audio> {
     match Container::of_bytes(&bytes).or_else(|| Container::of_path(path)) {
         Some(Container::Wav) => wav::decode(&bytes),
         Some(Container::Aiff) => aiff::decode(&bytes),
+        Some(Container::Flac) => flac::decode(&bytes),
         None => Err(crate::format_error!(
-            "{} is not a container this build reads; expected WAV or AIFF",
+            "{} is not a container this build reads; expected WAV, AIFF or FLAC",
             path.display()
         )),
     }
@@ -561,13 +570,14 @@ pub fn write_file(path: impl AsRef<Path>, audio: &Audio) -> Result<()> {
     let path = path.as_ref();
     let container = Container::of_path(path).ok_or_else(|| {
         crate::invalid_argument_error!(
-            "{} has no extension this build writes; expected .wav or .aiff",
+            "{} has no extension this build writes; expected .wav, .aiff or .flac",
             path.display()
         )
     })?;
     match container {
         Container::Wav => wav::write_file(path, audio),
         Container::Aiff => aiff::write_file(path, audio),
+        Container::Flac => flac::write_file(path, audio),
     }
     .map_err(|error| match error {
         crate::error::Error::Io(error) => crate::error::io_at(path, &error),
@@ -592,10 +602,14 @@ mod tests {
     fn a_container_is_recognised_by_its_bytes_before_its_name() {
         assert_eq!(Container::of_bytes(b"RIFF....WAVE"), Some(Container::Wav));
         assert_eq!(Container::of_bytes(b"FORM....AIFF"), Some(Container::Aiff));
+        assert_eq!(
+            Container::of_bytes(b"fLaC\0\0\0\x22"),
+            Some(Container::Flac)
+        );
         assert_eq!(Container::of_bytes(b"OggS"), None);
         assert_eq!(Container::of_bytes(b"RIF"), None);
         assert_eq!(Container::of_path("song.AIF"), Some(Container::Aiff));
-        assert_eq!(Container::of_path("song.flac"), None);
+        assert_eq!(Container::of_path("song.FLAC"), Some(Container::Flac));
         assert_eq!(Container::parse(".Wav"), Some(Container::Wav));
     }
 
@@ -638,7 +652,7 @@ mod tests {
         }
 
         // An extension nobody writes is refused instead of guessed at.
-        assert!(write_file(root.join("song.flac"), &audio).is_err());
+        assert!(write_file(root.join("song.ogg"), &audio).is_err());
 
         // A file named wrongly is still read by what its bytes say.
         let misnamed = root.join("actually.aiff");

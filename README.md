@@ -29,8 +29,8 @@ recording ─► stems ─► events ─► sample bank + placements + notes ─
      └───────────────── exact reconstruction ◄──────────────────────────┘
 ```
 
-1. **Decode** a WAV or AIFF container into planar `f64` channels that stay on
-   their exact integer grid, so nothing is lost before analysis begins.
+1. **Decode** a WAV, AIFF or FLAC container into planar `f64` channels that
+   stay on their exact integer grid, so nothing is lost before analysis begins.
 2. **Split** the recording into a harmonic and a percussive stem, plus a
    correction stem that makes the three sum back to the input exactly.
 3. **Cut** each stem into events at detected onsets, snapped to the attack the
@@ -117,7 +117,7 @@ The modules mirror the pipeline:
 
 | Module        | Responsibility                                                    |
 | ------------- | ----------------------------------------------------------------- |
-| `audio`       | WAV and AIFF codecs, planar buffers on an exact integer grid       |
+| `audio`       | WAV, AIFF and FLAC codecs, planar buffers on an exact integer grid |
 | `dsp`         | FFT, STFT, windows, onsets, pitch detection, stem separation       |
 | `decompose`   | Stems, events, the sample bank, matching pursuit, note recognition |
 | `associative` | The doublet link network and its Links Notation projection         |
@@ -171,6 +171,7 @@ the parts of a 16-bit recording are themselves 16-bit rather than padded out to
 | LMMS       | `.mmp`       | yes     | yes       |
 | SFZ        | `.sfz`       | yes     | yes       |
 | WAV, AIFF  | `.wav`, `.aiff` | yes  | yes       |
+| FLAC       | `.flac`      | yes     | yes       |
 
 Every project format has a reader as well as a writer, and the integration
 suite asserts that a session written by the exporter reads back as the session
@@ -204,7 +205,8 @@ images, silence — so nothing is committed to the repository and nothing is
 downloaded when the suite runs.
 
 The round trip is checked in memory, through an archive on disk, across all
-four PCM sample formats, through both containers and through the command line.
+four PCM sample formats, through all three containers and through the command
+line.
 
 ```bash
 cargo test                            # everything
