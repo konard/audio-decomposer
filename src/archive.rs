@@ -18,15 +18,16 @@
 //! given, sample for sample, so the round trip
 //! `write_dir` → `read_dir` → [`Decomposition::reconstruct`] returns the
 //! original recording. Buffers are written in their own sample format when that
-//! format can hold them exactly, and as 64-bit float when it cannot, so nothing
-//! is ever rounded on the way to disk.
+//! format can hold them exactly, and otherwise in the narrowest format that
+//! can, so nothing is ever rounded on the way to disk and nothing pays for
+//! precision it does not carry.
 
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::associative::schema::{Entry, Manifest, SampleEntry};
-use crate::audio::{wav, Audio, SampleFormat};
+use crate::audio::{wav, Audio};
 use crate::decompose::model::{Decomposition, Sample, Stem};
 use crate::error::{Error, Result};
 
@@ -65,9 +66,12 @@ pub fn write_dir(path: impl AsRef<Path>, decomposition: &Decomposition) -> Resul
         write_audio(&resolve(root, &entry.file)?, &stem.audio)?;
     }
     for (entry, sample) in manifest.samples.iter().zip(&decomposition.samples) {
+        // A bank sample is a cutting of the recording, so it belongs on the
+        // recording's grid. `write_audio` widens it again if normalising the
+        // sample pushed it past what that format can count to.
         let waveform = Audio::from_mono(
             decomposition.source.sample_rate,
-            SampleFormat::F64,
+            decomposition.source.format,
             sample.waveform.clone(),
         )?;
         write_audio(&resolve(root, &entry.file)?, &waveform)?;
@@ -226,8 +230,12 @@ fn write_audio(path: &Path, audio: &Audio) -> Result<()> {
     if audio.is_exact_in_format() {
         return wav::write_file(path, audio);
     }
+    // Off its own grid: store it in the narrowest format that is still exact
+    // rather than reaching straight for `f64`, which would quadruple the
+    // bytes without carrying a single extra bit of the recording.
     let mut exact = audio.clone();
-    exact.set_format(SampleFormat::F64);
+    let floor = exact.format();
+    exact.set_format(exact.narrowest_exact_format(floor));
     wav::write_file(path, &exact)
 }
 
@@ -269,6 +277,7 @@ fn unique(taken: &mut HashSet<String>, file: &str) -> String {
 mod tests {
     use super::*;
     use crate::associative::schema::{CORRECTION_FILE, RESIDUAL_FILE};
+    use crate::audio::SampleFormat;
     use crate::decompose::model::{Gain, Note, Placement, SourceInfo};
 
     /// A temporary directory that removes itself, so tests leave no litter.

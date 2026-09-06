@@ -183,19 +183,30 @@ pub fn decompose(audio: &Audio, options: &DecomposeOptions) -> Result<Decomposit
     Ok(decomposition)
 }
 
+/// Tags a derived buffer with the narrowest format that still holds it exactly.
+///
+/// Differences of grid values land back on that same grid, so the residual of a
+/// 16-bit recording is 16-bit data even though nothing constrained it to be.
+/// Tagging every one of them `f64` "to be safe" is lossless but quadruples what
+/// the archive, the stems and every exported project spend on them. `floor`
+/// stops the search short of formats finer than the recording itself.
+fn tag_exactly(buffer: &mut Audio, floor: SampleFormat) {
+    let format = buffer.narrowest_exact_format(floor);
+    buffer.set_format(format);
+}
+
 /// Computes the residual, and the correction that absorbs the rounding a float
 /// source can still show.
 fn close(decomposition: &mut Decomposition, audio: &Audio) -> Result<()> {
     let rendered = decomposition.render();
     let mut residual = audio.difference(&rendered)?;
-    residual.set_format(SampleFormat::F64);
+    tag_exactly(&mut residual, audio.format());
     decomposition.residual = residual;
 
     let restored = decomposition.reconstruct();
-    let correction = audio.difference(&restored)?;
+    let mut correction = audio.difference(&restored)?;
     if correction.peak() > 0.0 {
-        let mut correction = correction;
-        correction.set_format(SampleFormat::F64);
+        tag_exactly(&mut correction, audio.format());
         decomposition.correction = Some(correction);
     }
     Ok(())
@@ -230,7 +241,7 @@ fn separate(audio: &Audio, options: &DecomposeOptions) -> Result<Vec<Stem>> {
     sum.add_assign(&harmonic)?;
     sum.add_assign(&percussive)?;
     let mut correction = audio.difference(&sum)?;
-    correction.set_format(SampleFormat::F64);
+    tag_exactly(&mut correction, audio.format());
 
     Ok(vec![
         Stem::new("harmonic".to_string(), harmonic),
@@ -614,6 +625,26 @@ mod tests {
         assert_eq!(moved[2], Event::new(0, 90, 110));
         assert_eq!(moved[1], Event::new(1, 0, 100), "channel 1 is untouched");
         assert_eq!(moved[3], Event::new(1, 100, 100));
+    }
+
+    #[test]
+    fn derived_buffers_stay_on_the_grid_the_recording_came_from() {
+        // Everything decompose derives is a difference of 16-bit values, so it
+        // is 16-bit data. Tagging it `f64` would triple the size of the archive
+        // and of every project exported from it without adding a single bit.
+        let audio = repeated(22_050, 4, 2048);
+        let decomposition = decompose(&audio, &DecomposeOptions::default()).unwrap();
+
+        assert_eq!(decomposition.residual.format(), SampleFormat::PcmI16);
+        for stem in &decomposition.stems {
+            assert_eq!(stem.audio.format(), SampleFormat::PcmI16, "{}", stem.name);
+        }
+        if let Some(correction) = &decomposition.correction {
+            assert_eq!(correction.format(), SampleFormat::PcmI16);
+        }
+
+        // Narrower tags must never cost fidelity.
+        assert_eq!(decomposition.reconstruct().channels(), audio.channels());
     }
 
     #[test]

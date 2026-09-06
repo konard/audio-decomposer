@@ -31,6 +31,17 @@ pub enum SampleFormat {
 }
 
 impl SampleFormat {
+    /// Every format, narrowest first, so a search for the smallest exact
+    /// encoding can simply take the first that fits.
+    pub const ALL: [Self; 6] = [
+        Self::PcmU8,
+        Self::PcmI16,
+        Self::PcmI24,
+        Self::PcmI32,
+        Self::F32,
+        Self::F64,
+    ];
+
     /// Bits stored per sample.
     #[must_use]
     pub const fn bits(self) -> u16 {
@@ -371,17 +382,51 @@ impl Audio {
     /// and then it has to be stored as `f64` to stay lossless.
     #[must_use]
     pub fn is_exact_in_format(&self) -> bool {
+        self.is_exact_in(self.format)
+    }
+
+    /// Whether every sample would survive being written in `format` and read
+    /// back, unchanged.
+    #[must_use]
+    pub fn is_exact_in(&self, format: SampleFormat) -> bool {
         let mut samples = self.channels.iter().flat_map(|channel| channel.iter());
-        match (self.format.quantum(), self.format.code_range()) {
+        match (format.quantum(), format.code_range()) {
             (Some(quantum), Some((low, high))) => samples.all(|sample| {
                 let code = round_half_away_from_zero(sample / quantum);
                 (low..=high).contains(&code) && code as f64 * quantum == *sample
             }),
             _ => {
-                self.format == SampleFormat::F64
+                format == SampleFormat::F64
                     || samples.all(|sample| f64::from(*sample as f32) == *sample)
             }
         }
+    }
+
+    /// The smallest format that stores every sample of this buffer exactly and
+    /// resolves at least as finely as `floor`.
+    ///
+    /// Reaching straight for `f64` whenever a buffer leaves its own grid is
+    /// safe and usually four times larger than it needs to be. A residual is a
+    /// difference of grid values, so it lands back on that same grid and 16
+    /// bits still hold it; only arithmetic that lands *between* grid points
+    /// buys anything with the extra width.
+    ///
+    /// Note that integer quanta are tied to full scale, so a value past ±1.0
+    /// is off every integer grid no matter how wide, and only a float format
+    /// can hold it.
+    ///
+    /// `floor` keeps the answer honest about where the audio came from. An
+    /// all-zero correction is exact in 8 bits, but tagging it that way would
+    /// arm [`Audio::quantize`] to crush anything later mixed into it, so a
+    /// buffer derived from a 16-bit recording stays at 16 bits or wider.
+    #[must_use]
+    pub fn narrowest_exact_format(&self, floor: SampleFormat) -> SampleFormat {
+        SampleFormat::ALL
+            .iter()
+            .copied()
+            .filter(|format| format.bits() >= floor.bits())
+            .find(|format| self.is_exact_in(*format))
+            .unwrap_or(SampleFormat::F64)
     }
 
     /// Integer codes for the current format, or `None` for float formats.
@@ -735,5 +780,59 @@ mod tests {
 
         let too_precise = Audio::from_mono(8_000, SampleFormat::F32, vec![0.1]).unwrap();
         assert!(!too_precise.is_exact_in_format());
+    }
+
+    #[test]
+    fn the_narrowest_exact_format_is_preferred_over_reaching_for_double() {
+        // Between two 16-bit grid points, but exactly on a 24-bit one: `f64`
+        // would be four times the bytes for no extra fidelity.
+        let finer = Audio::from_mono(8_000, SampleFormat::PcmI16, vec![1.0 / 8_388_608.0]).unwrap();
+        assert!(!finer.is_exact_in_format());
+        assert_eq!(
+            finer.narrowest_exact_format(SampleFormat::PcmI16),
+            SampleFormat::PcmI24
+        );
+    }
+
+    #[test]
+    fn a_value_past_full_scale_leaves_every_integer_grid() {
+        // Integer quanta are tied to full scale, so widening never brings a
+        // sample louder than ±1.0 back onto the grid: only a float format can
+        // hold it, and single precision is enough for a value this simple.
+        let loud = Audio::from_mono(8_000, SampleFormat::PcmI16, vec![1.5]).unwrap();
+        assert_eq!(
+            loud.narrowest_exact_format(SampleFormat::PcmU8),
+            SampleFormat::F32
+        );
+
+        let awkward = Audio::from_mono(8_000, SampleFormat::PcmI16, vec![1.1]).unwrap();
+        assert_eq!(
+            awkward.narrowest_exact_format(SampleFormat::PcmU8),
+            SampleFormat::F64
+        );
+    }
+
+    #[test]
+    fn the_floor_keeps_a_derived_buffer_on_the_grid_it_came_from() {
+        // Silence fits in 8 bits, but a correction for a 16-bit recording that
+        // claimed to be 8-bit would quantize anything later mixed into it.
+        let silence = Audio::silence(8_000, SampleFormat::PcmI16, 1, 8);
+        assert_eq!(
+            silence.narrowest_exact_format(SampleFormat::PcmU8),
+            SampleFormat::PcmU8
+        );
+        assert_eq!(
+            silence.narrowest_exact_format(SampleFormat::PcmI16),
+            SampleFormat::PcmI16
+        );
+    }
+
+    #[test]
+    fn a_buffer_no_integer_grid_can_hold_still_falls_back_to_double() {
+        let precise = Audio::from_mono(8_000, SampleFormat::F32, vec![0.1]).unwrap();
+        assert_eq!(
+            precise.narrowest_exact_format(SampleFormat::PcmU8),
+            SampleFormat::F64
+        );
     }
 }
