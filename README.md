@@ -230,6 +230,14 @@ The example writes a `CREDITS.md` beside the audio naming every recording, its
 performer, its licence and the page it came from. Without the environment
 variable the corpus tests do nothing, so `cargo test` stays offline.
 
+Every recording in the corpus reconstructs exactly. None of them deduplicates:
+a violin, a choir and a cello do not play the same waveform twice, so the bank
+ends up with one entry per event. That is measured rather than assumed — see
+[docs/case-studies/issue-1](docs/case-studies/issue-1) for the numbers and for
+the probe that got them wrong the first time. Deduplication earns its keep on
+material that genuinely repeats: programmed drums, looped bars, sampled
+instruments, anything sequenced rather than played.
+
 ## Development
 
 ```bash

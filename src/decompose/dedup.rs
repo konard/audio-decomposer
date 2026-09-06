@@ -20,6 +20,14 @@
 //! Whatever is not accepted stays in the signal and ends up in the residual, so
 //! the tolerance decides how large the bank gets, never whether the
 //! reconstruction is correct.
+//!
+//! How much this finds depends entirely on the material. Sequenced music is
+//! largely the same waveforms placed again, and the bank collapses. Live
+//! acoustic recordings are not: measured over a public-domain corpus, not one
+//! event in 1 554 had a match under the default tolerance against a stretch it
+//! did not come from, because the same written note is a different physical
+//! event every time it is played. Gain and time shift cannot relate those. The
+//! measurement is in `docs/case-studies/issue-1`.
 
 use crate::decompose::model::Gain;
 use crate::dsp::fft;
