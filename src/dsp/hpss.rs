@@ -122,7 +122,7 @@ pub fn median(values: &[f64]) -> f64 {
     if sorted.len() % 2 == 1 {
         sorted[middle]
     } else {
-        0.5 * (sorted[middle - 1] + sorted[middle])
+        f64::midpoint(sorted[middle - 1], sorted[middle])
     }
 }
 

@@ -8,7 +8,7 @@
 //! - [`verify`] does that and measures the difference against a recording, so a
 //!   caller can prove the round trip instead of trusting it.
 //! - [`from_archive`] does the same starting from a directory on disk.
-//! - [`arrange`] goes the other way: it takes notes — typically edited in a
+//! - [`arrange()`] goes the other way: it takes notes — typically edited in a
 //!   DAW and read back from a MIDI file — and plays the bank through them, so
 //!   the decomposition works as an instrument and not only as a recording.
 
