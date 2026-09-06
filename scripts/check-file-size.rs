@@ -178,7 +178,7 @@ fn changed_files(raw: Option<&str>) -> Option<BTreeSet<String>> {
 /// changed by the current pull request, so unchanged files stop repeating the
 /// same warning on every run. The hard limit stays repository-wide.
 fn should_annotate(finding: &Finding, changed: Option<&BTreeSet<String>>) -> bool {
-    changed.map_or(true, |changed| changed.contains(&finding.file))
+    changed.is_none_or(|changed| changed.contains(&finding.file))
 }
 
 #[cfg(not(test))]

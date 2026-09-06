@@ -1,74 +1,31 @@
-use lino_arguments::Parser;
+//! The `audio-decomposer` command line.
+//!
+//! Everything the tool can do lives in the library; this binary only parses
+//! arguments, runs the command and reports what happened.
+
+mod cli;
+
 use std::io::{self, Write};
+use std::process::ExitCode;
 
-use example_sum_package_name::sum;
+use audio_decomposer::error::Error;
+use cli::{run, Cli};
+use lino_arguments::Parser;
 
-#[derive(Parser, Debug)]
-#[command(name = "example-sum-package-name", about = "Sum two numbers")]
-struct Args {
-    #[arg(long, env = "A", default_value = "0", allow_hyphen_values = true)]
-    a: i64,
-
-    #[arg(long, env = "B", default_value = "0", allow_hyphen_values = true)]
-    b: i64,
-}
-
-fn write_output(writer: &mut impl Write, output: &str) -> io::Result<()> {
-    match writer
-        .write_all(output.as_bytes())
-        .and_then(|()| writer.flush())
-    {
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
-        result => result,
-    }
-}
-
-fn write_stdout(output: &str) -> io::Result<()> {
-    write_output(&mut io::stdout(), output)
-}
-
-fn main() -> io::Result<()> {
-    let args = Args::parse();
-    write_stdout(&format!("{}\n", sum(args.a, args.b)))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct BrokenPipeWriter;
-
-    impl Write for BrokenPipeWriter {
-        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
-            Err(io::Error::from(io::ErrorKind::BrokenPipe))
+fn main() -> ExitCode {
+    lino_arguments::init();
+    let cli = Cli::parse();
+    // The report is written as it is produced rather than collected first, so
+    // a long analysis says what it has found so far.
+    let mut stdout = io::stdout().lock();
+    let result = run(&cli, &mut stdout).and_then(|()| stdout.flush().map_err(Error::from));
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        // A run piped into `head` is not a failed run.
+        Err(Error::Io(error)) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+        Err(error) => {
+            let _ = writeln!(io::stderr(), "audio-decomposer: {error}");
+            ExitCode::FAILURE
         }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    struct OtherErrorWriter;
-
-    impl Write for OtherErrorWriter {
-        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
-            Err(io::Error::from(io::ErrorKind::PermissionDenied))
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn write_output_treats_broken_pipe_as_clean_exit() {
-        assert!(write_output(&mut BrokenPipeWriter, "1\n").is_ok());
-    }
-
-    #[test]
-    fn write_output_preserves_other_io_errors() {
-        let err = write_output(&mut OtherErrorWriter, "1\n").unwrap_err();
-
-        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
     }
 }
