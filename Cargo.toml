@@ -1,6 +1,6 @@
 [package]
 name = "audio-decomposer"
-version = "0.19.30"
+version = "0.20.0"
 edition = "2021"
 description = "Decompose audio into deduplicated samples, stems, notes and DAW projects, and compose it back losslessly"
 readme = "README.md"

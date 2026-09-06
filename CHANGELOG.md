@@ -60,6 +60,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [0.20.0] - 2026-09-06
+
+### Added
+- Exact WAV and AIFF codecs with a planar audio buffer that keeps integer PCM on its own grid, so a decoded and re-encoded file is byte-identical.
+- A DSP layer: FFT, STFT with exact overlap-add reconstruction, window functions, envelope followers, onset detection with attack snapping, monophonic pitch detection and polyphonic partial tracking, and harmonic/percussive source separation.
+- A decomposer that splits a recording into stems, cuts them into events, deduplicates the events into a sample bank by matching pursuit, recognises the note of every placement, and keeps a residual that makes the reconstruction exact.
+- An associative link store that deduplicates every value as a doublet, projects the whole decomposition to Links Notation, and can be mirrored into the upstream `doublets` storage behind the `doublets-native` feature.
+- Standard MIDI file reading and writing, with a tempo and division chosen so one tick is exactly one audio frame.
+
+### Added
+- A decomposition archive: `archive::write_dir` lays a decomposition out as a directory holding the manifest in Links Notation, one file per stem, one file per bank sample and the residual, and `archive::read_dir` returns the decomposition it was written from.
+- Name collisions between stems and between samples are resolved when the archive is written, so two samples whose names differ only in case never share a file.
+
+### Added
+- Exact reconstruction: `recompose::reconstruct` sums the stems, the placements and the residual back into the recording, sample for sample for integer PCM input.
+- `recompose::verify` measures a decomposition against the recording it came from and reports the deviation, the share of energy left in the residual, and how many frames of timeline each stored frame accounts for.
+- `recompose::arrange` plays notes through the sample bank, so a decomposition can voice a score it was never made from. Notes the bank cannot voice are either left silent or synthesised, velocity can scale the sample, and samples can be cut at the length of the note with a fade that stops the click.
+
+### Added
+- Project export and import for MusicXML, DAWproject, Ableton Live (`.als`), FL Studio (`.flp`), REAPER (`.rpp`), Ardour (`.ardour`), LMMS (`.mmp`) and SFZ, on top of a shared session model, an XML reader and writer, and the zip and gzip containers those formats are packed in.
+- Every format has a reader as well as a writer: a session written by the exporter reads back as the session it was written from, and an Ardour session is read together with the MIDI files it keeps outside itself.
+- `formats::project::export` writes the projects beside the audio they point at, so every clip a project names is a file that is really there.
+
+### Added
+- Tempo measurement from where the events actually fall, with a confidence the exporter uses to decide between the measured tempo and the one it was given.
+- `audio::read_file` and `audio::write_file` choose the container from the bytes and from the extension, so WAV and AIFF are handled without the caller naming either.
+
+### Fixed
+- I/O failures name the file they happened to, instead of reporting "No such file or directory" with no hint which path was meant.
+
+### Added
+- A command line with one command per stage: `decompose` takes a recording apart and writes the archive and the projects, `compose` puts it back together, `verify` checks a decomposition against the recording it claims to reproduce, `inspect` describes either without changing anything, `export` writes projects beside an archive that already exists, and `render` plays a score through the sample bank.
+- The binary exits with a non-zero status and a message on standard error when a command fails, and treats a closed pipe as success so piping into `head` is not an error.
+
+### Added
+- An integration suite that proves the round trip: every fixture is synthesised inside the test process, so no copyrighted audio is committed or downloaded, and each recording is checked to come back byte for byte in memory, through an archive on disk, across all four PCM sample formats, through both containers and through the command line.
+- Runnable examples for the three things the crate is for: proving a round trip is lossless, turning a recording into DAW projects, and playing a different score through the sounds a recording was made of.
+
+### Added
+- A FLAC codec written from scratch, like every other format this crate reads: MSB-first bit I/O, CRC-8 and CRC-16, MD5, metadata blocks, all four subframe types, Rice-partitioned residuals and stereo decorrelation. Public-domain recordings are published as FLAC, so this is how they get in without a lossy conversion on the way.
+- `Container::Flac`, recognised by its `fLaC` magic and by the `.flac` extension, so `decode`, `encode`, `read_file` and `write_file` handle it everywhere they already handled WAV and AIFF.
+- The encoder costs fixed and fitted (LPC) predictors against each other and writes only the cheapest description of each block, so its output is comparable in size to the reference implementation's while staying exactly reversible.
+
+### Changed
+
+- Buffers derived from a recording — the residual, the correction and every
+  bank sample — are now tagged with the narrowest sample format that holds them
+  exactly, instead of always `f64`. Differences of grid values land back on that
+  grid, so a 16-bit recording yields 16-bit parts. Archives, stems and exported
+  projects of a 16-bit source shrink to roughly 40% of their previous size (a
+  17-second loop went from 33 MB to 13 MB) with byte-identical reconstruction.
+
+  Parts derived from a float recording stay float: integer formats space their
+  codes evenly, so a 32-bit grid cannot hold the quiet detail `f32` resolves
+  around zero.
+
+### Documentation
+
+- The README now says how buffers are stored in an archive: in the narrowest
+  sample format that holds them exactly, never rounded.
+
+### Documentation
+
+- The README now maps each music program named in the issue to the file it
+  should open, and says plainly that GarageBand, Logic and Reason are served
+  through MIDI and audio because their project formats are closed.
+
+### Added
+- `cargo run --example public_domain_corpus` fetches real recordings from Wikimedia Commons, keeping only what Commons states is Public Domain or CC0, writes a `CREDITS.md` naming each performer and licence, and then decomposes and rebuilds each one to show the reconstruction is exact.
+- An integration test that runs the whole round trip over that corpus when `AUDIO_DECOMPOSER_CORPUS` names it, and does nothing when it does not, so `cargo test` stays offline and hermetic by default.
+
+### Added
+- A case study measuring how much deduplication finds on real music, and why widening the matcher's options does not change it.
+- `experiments/match-quality` and `experiments/reuse-sweep`, the probes the measurement was made with.
+
+### Changed
+- The deduplication module and the README now state what the matcher can and cannot relate, instead of leaving the reuse figure unexplained.
+
 ## [0.19.30] - 2026-08-22
 
 ### Fixed
