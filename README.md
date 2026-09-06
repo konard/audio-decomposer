@@ -153,6 +153,10 @@ song-decomposition/
 `decomposition.lino` is the source of truth. Everything else is written from it,
 and reading the directory back gives the same decomposition it was written from.
 
+Every buffer is stored in the narrowest sample format that holds it exactly, so
+the parts of a 16-bit recording are themselves 16-bit rather than padded out to
+`f64`. Nothing is ever rounded on the way to disk.
+
 ## Formats
 
 | Format     | Extension    | Written | Read back |
