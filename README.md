@@ -214,6 +214,22 @@ cargo test --test integration         # the round trip suite
 cargo test --test unit                # unit tests
 ```
 
+### Real music
+
+Synthesised fixtures are kinder to the analysis than a room with a microphone
+in it, so the same round trip can be run over actual recordings. The corpus is
+fetched rather than committed, and only from files Wikimedia Commons states are
+Public Domain or CC0, so no copyright question arises:
+
+```bash
+cargo run --release --example public_domain_corpus            # fills ./corpus
+AUDIO_DECOMPOSER_CORPUS=corpus cargo test --release --test integration public_domain
+```
+
+The example writes a `CREDITS.md` beside the audio naming every recording, its
+performer, its licence and the page it came from. Without the environment
+variable the corpus tests do nothing, so `cargo test` stays offline.
+
 ## Development
 
 ```bash
